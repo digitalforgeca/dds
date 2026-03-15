@@ -25,8 +25,15 @@ def main(ctx: click.Context, config: str, verbose: bool) -> None:
 @click.argument("environment")
 @click.option("--service", "-s", multiple=True, help="Deploy only specific service(s).")
 @click.option("--dry-run", is_flag=True, help="Preview actions without executing.")
+@click.option("--skip-preflight", is_flag=True, help="Skip preflight checks.")
 @click.pass_context
-def deploy(ctx: click.Context, environment: str, service: tuple[str, ...], dry_run: bool) -> None:
+def deploy(
+    ctx: click.Context,
+    environment: str,
+    service: tuple[str, ...],
+    dry_run: bool,
+    skip_preflight: bool,
+) -> None:
     """Deploy services to an environment."""
     cfg = load_config(ctx.obj["config_path"])
     if cfg is None:
@@ -39,20 +46,37 @@ def deploy(ctx: click.Context, environment: str, service: tuple[str, ...], dry_r
         console.print(f"Available: {', '.join(cfg.get('environments', {}).keys())}")
         raise SystemExit(1)
 
+    # Preflight checks
+    if not skip_preflight and not dry_run:
+        from dds.preflight import print_preflight, run_preflight
+
+        results = run_preflight(cfg)
+        if not print_preflight(results):
+            console.print("[red]Aborting deploy due to failed preflight checks.[/red]")
+            console.print("Use --skip-preflight to override.")
+            raise SystemExit(1)
+
     services = env_cfg.get("services", {})
     targets = {k: v for k, v in services.items() if k in service} if service else services
 
     if not targets:
         console.print("[yellow]No services matched.[/yellow]")
+        if service:
+            console.print(f"Available services: {', '.join(services.keys())}")
         raise SystemExit(1)
 
     from dds.deployers import dispatch
 
-    for name, svc_cfg in targets.items():
+    for svc_name, svc_cfg in targets.items():
         if dry_run:
-            console.print(f"[dim]DRY RUN:[/dim] Would deploy [bold]{name}[/bold] ({svc_cfg.get('type', '?')})")
+            svc_type = svc_cfg.get("type", "?")
+            strategy = svc_cfg.get("build_strategy", "acr") if svc_type == "container-app" else ""
+            console.print(
+                f"[dim]DRY RUN:[/dim] Would deploy [bold]{svc_name}[/bold] "
+                f"(type: {svc_type}{f', strategy: {strategy}' if strategy else ''})"
+            )
         else:
-            dispatch(name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+            dispatch(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
 
 
 @main.command()
@@ -72,7 +96,22 @@ def status(ctx: click.Context, environment: str) -> None:
 
     from dds.deployers import show_status
 
+    console.print(f"\n[bold]📊 Status: {environment}[/bold]\n")
     show_status(env_cfg, cfg, verbose=ctx.obj["verbose"])
+
+
+@main.command()
+@click.pass_context
+def preflight(ctx: click.Context) -> None:
+    """Run preflight checks without deploying."""
+    cfg = load_config(ctx.obj["config_path"])
+
+    from dds.preflight import print_preflight, run_preflight
+
+    results = run_preflight(cfg)
+    passed = print_preflight(results)
+    if not passed:
+        raise SystemExit(1)
 
 
 @main.command()
