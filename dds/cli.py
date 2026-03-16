@@ -1,38 +1,51 @@
 """DDS CLI — cross-platform deployment commands."""
 
+from __future__ import annotations
+
 import click
-from rich.console import Console
 
 from dds import __version__
 from dds.config import load_config
+from dds.console import console
+from dds.context import DeployContext
 
-console = Console()
 
-
-def _load_and_validate(ctx: click.Context, environment: str) -> tuple[dict, dict]:
-    """Load config and validate environment exists. Returns (full_cfg, env_cfg)."""
+def _load_cfg(ctx: click.Context) -> dict:
+    """Load config or exit."""
     cfg = load_config(ctx.obj["config_path"])
     if cfg is None:
         console.print("[red]Error:[/red] No dds.yaml found. Run 'dds init' to create one.")
         raise SystemExit(1)
+    return cfg
 
+
+def _load_env(ctx: click.Context, environment: str) -> tuple[dict, dict]:
+    """Load config and resolve environment. Returns (full_cfg, env_cfg)."""
+    cfg = _load_cfg(ctx)
     env_cfg = cfg.get("environments", {}).get(environment)
     if env_cfg is None:
         console.print(f"[red]Error:[/red] Unknown environment '{environment}'.")
         console.print(f"Available: {', '.join(cfg.get('environments', {}).keys())}")
         raise SystemExit(1)
-
     return cfg, env_cfg
 
 
-def _get_service(env_cfg: dict, cfg: dict, service_name: str) -> tuple[str, dict]:
-    """Get a single service config by name."""
+def _make_ctx(click_ctx: click.Context, environment: str, service: str) -> DeployContext:
+    """Build a DeployContext for a named service, or exit if not found."""
+    cfg, env_cfg = _load_env(click_ctx, environment)
     services = env_cfg.get("services", {})
-    if service_name not in services:
-        console.print(f"[red]Error:[/red] Unknown service '{service_name}'.")
+    if service not in services:
+        console.print(f"[red]Error:[/red] Unknown service '{service}'.")
         console.print(f"Available: {', '.join(services.keys())}")
         raise SystemExit(1)
-    return service_name, services[service_name]
+    return DeployContext(service, services[service], env_cfg, cfg, verbose=click_ctx.obj["verbose"])
+
+
+def _require_container(ctx: DeployContext, action: str) -> None:
+    """Guard: exit if service is not a container-app."""
+    if ctx.service_type != "container-app":
+        console.print(f"[red]{action} is only supported for container-app services.[/red]")
+        raise SystemExit(1)
 
 
 @click.group()
@@ -63,58 +76,55 @@ def deploy(
     skip_health: bool,
 ) -> None:
     """Deploy services to an environment."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
+    cfg, env_cfg = _load_env(ctx, environment)
 
-    # Preflight checks
     if not skip_preflight and not dry_run:
         from dds.preflight import print_preflight, run_preflight
 
-        results = run_preflight(cfg)
-        if not print_preflight(results):
-            console.print("[red]Aborting deploy due to failed preflight checks.[/red]")
-            console.print("Use --skip-preflight to override.")
+        if not print_preflight(run_preflight(cfg)):
+            console.print("[red]Aborting. Use --skip-preflight to override.[/red]")
             raise SystemExit(1)
 
     services = env_cfg.get("services", {})
     targets = {k: v for k, v in services.items() if k in service} if service else services
-
     if not targets:
         console.print("[yellow]No services matched.[/yellow]")
         if service:
-            console.print(f"Available services: {', '.join(services.keys())}")
+            console.print(f"Available: {', '.join(services.keys())}")
         raise SystemExit(1)
 
     from dds.deployers import dispatch
 
     failed: list[str] = []
     for svc_name, svc_cfg in targets.items():
+        deploy_ctx = DeployContext(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+
         if dry_run:
-            svc_type = svc_cfg.get("type", "?")
-            strategy = svc_cfg.get("build_strategy", "acr") if svc_type == "container-app" else ""
+            strategy = (
+                svc_cfg.get("build_strategy", "acr")
+                if deploy_ctx.service_type == "container-app"
+                else ""
+            )
             console.print(
                 f"[dim]DRY RUN:[/dim] Would deploy [bold]{svc_name}[/bold] "
-                f"(type: {svc_type}{f', strategy: {strategy}' if strategy else ''})"
+                f"(type: {deploy_ctx.service_type}{f', strategy: {strategy}' if strategy else ''})"
             )
             continue
 
         try:
-            dispatch(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+            dispatch(deploy_ctx)
 
-            # Post-deploy health check for container apps
             if (
                 not skip_health
-                and svc_cfg.get("type") == "container-app"
+                and deploy_ctx.service_type == "container-app"
                 and svc_cfg.get("health_path")
             ):
                 from dds.health import verify_container_health
 
-                healthy = verify_container_health(
-                    svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"]
-                )
-                if not healthy:
+                if not verify_container_health(deploy_ctx):
                     console.print(
                         f"[yellow]⚠️  {svc_name} deployed but health check failed. "
-                        f"Consider rolling back with 'dds rollback {environment} -s {svc_name}'[/yellow]"
+                        f"Consider: dds rollback {environment} -s {svc_name}[/yellow]"
                     )
                     failed.append(svc_name)
         except Exception as e:
@@ -131,8 +141,7 @@ def deploy(
 @click.pass_context
 def status(ctx: click.Context, environment: str) -> None:
     """Show deployment status for an environment."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
-
+    cfg, env_cfg = _load_env(ctx, environment)
     from dds.deployers import show_status
 
     console.print(f"\n[bold]📊 Status: {environment}[/bold]\n")
@@ -144,12 +153,9 @@ def status(ctx: click.Context, environment: str) -> None:
 def preflight(ctx: click.Context) -> None:
     """Run preflight checks without deploying."""
     cfg = load_config(ctx.obj["config_path"])
-
     from dds.preflight import print_preflight, run_preflight
 
-    results = run_preflight(cfg)
-    passed = print_preflight(results)
-    if not passed:
+    if not print_preflight(run_preflight(cfg)):
         raise SystemExit(1)
 
 
@@ -158,28 +164,13 @@ def preflight(ctx: click.Context) -> None:
 @click.option("--service", "-s", required=True, help="Service to roll back.")
 @click.option("--revision", "-r", default=None, help="Target revision (default: previous).")
 @click.pass_context
-def rollback(
-    ctx: click.Context,
-    environment: str,
-    service: str,
-    revision: str | None,
-) -> None:
+def rollback(ctx: click.Context, environment: str, service: str, revision: str | None) -> None:
     """Roll back a service to a previous revision."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
-    svc_name, svc_cfg = _get_service(env_cfg, cfg, service)
-
-    if svc_cfg.get("type") != "container-app":
-        console.print("[red]Rollback is only supported for container-app services.[/red]")
-        raise SystemExit(1)
-
+    deploy_ctx = _make_ctx(ctx, environment, service)
+    _require_container(deploy_ctx, "Rollback")
     from dds.rollback import rollback_container_app
 
-    success = rollback_container_app(
-        svc_name, svc_cfg, env_cfg, cfg,
-        target_revision=revision,
-        verbose=ctx.obj["verbose"],
-    )
-    if not success:
+    if not rollback_container_app(deploy_ctx, target_revision=revision):
         raise SystemExit(1)
 
 
@@ -189,16 +180,11 @@ def rollback(
 @click.pass_context
 def revisions(ctx: click.Context, environment: str, service: str) -> None:
     """Show revision history for a container app service."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
-    svc_name, svc_cfg = _get_service(env_cfg, cfg, service)
-
-    if svc_cfg.get("type") != "container-app":
-        console.print("[red]Revisions are only available for container-app services.[/red]")
-        raise SystemExit(1)
-
+    deploy_ctx = _make_ctx(ctx, environment, service)
+    _require_container(deploy_ctx, "Revisions")
     from dds.rollback import show_revisions
 
-    show_revisions(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+    show_revisions(deploy_ctx)
 
 
 @main.command()
@@ -209,30 +195,25 @@ def revisions(ctx: click.Context, environment: str, service: str) -> None:
 @click.option("--system", "show_system", is_flag=True, help="Show system/platform logs.")
 @click.pass_context
 def logs(
-    ctx: click.Context,
-    environment: str,
-    service: str,
-    follow: bool,
-    tail: int,
-    show_system: bool,
+    ctx: click.Context, environment: str, service: str, follow: bool, tail: int, show_system: bool
 ) -> None:
     """Tail or stream logs from a container app service."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
-    svc_name, svc_cfg = _get_service(env_cfg, cfg, service)
-
-    if svc_cfg.get("type") != "container-app":
-        console.print("[red]Logs are only available for container-app services.[/red]")
-        raise SystemExit(1)
-
-    rg = env_cfg.get("resource_group", "")
-    app_name = svc_cfg.get("name", svc_name)
-
+    deploy_ctx = _make_ctx(ctx, environment, service)
+    _require_container(deploy_ctx, "Logs")
     from dds.logs import system_logs, tail_logs
 
     if show_system:
-        system_logs(app_name, rg, tail=tail, verbose=ctx.obj["verbose"])
+        system_logs(
+            deploy_ctx.app_name, deploy_ctx.resource_group, tail=tail, verbose=deploy_ctx.verbose
+        )
     else:
-        tail_logs(app_name, rg, follow=follow, tail=tail, verbose=ctx.obj["verbose"])
+        tail_logs(
+            deploy_ctx.app_name,
+            deploy_ctx.resource_group,
+            follow=follow,
+            tail=tail,
+            verbose=deploy_ctx.verbose,
+        )
 
 
 @main.command()
@@ -241,19 +222,11 @@ def logs(
 @click.pass_context
 def health(ctx: click.Context, environment: str, service: str) -> None:
     """Run health checks on a deployed service."""
-    cfg, env_cfg = _load_and_validate(ctx, environment)
-    svc_name, svc_cfg = _get_service(env_cfg, cfg, service)
-
-    if svc_cfg.get("type") != "container-app":
-        console.print("[red]Health checks are only available for container-app services.[/red]")
-        raise SystemExit(1)
-
+    deploy_ctx = _make_ctx(ctx, environment, service)
+    _require_container(deploy_ctx, "Health checks")
     from dds.health import verify_container_health
 
-    healthy = verify_container_health(
-        svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"]
-    )
-    if not healthy:
+    if not verify_container_health(deploy_ctx):
         raise SystemExit(1)
 
 
@@ -265,7 +238,6 @@ def init() -> None:
     if os.path.exists("dds.yaml"):
         console.print("[yellow]dds.yaml already exists.[/yellow]")
         raise SystemExit(1)
-
     from dds.config import write_template
 
     write_template("dds.yaml")

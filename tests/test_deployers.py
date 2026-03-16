@@ -1,7 +1,5 @@
 """Tests for dds.deployers dispatch module."""
 
-import pytest
-
 from dds.deployers import _DEPLOYER_REGISTRY, _import_func
 
 

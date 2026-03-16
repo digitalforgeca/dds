@@ -30,10 +30,14 @@ class TestCLI:
         import yaml
 
         cfg_file = tmp_path / "dds.yaml"
-        cfg_file.write_text(yaml.dump({
-            "project": "test",
-            "environments": {"dev": {"services": {}}},
-        }))
+        cfg_file.write_text(
+            yaml.dump(
+                {
+                    "project": "test",
+                    "environments": {"dev": {"services": {}}},
+                }
+            )
+        )
         runner = CliRunner()
         result = runner.invoke(main, ["-c", str(cfg_file), "deploy", "staging"])
         assert result.exit_code != 0
@@ -58,7 +62,16 @@ class TestCLI:
 
     def test_all_commands_registered(self) -> None:
         """Ensure all expected commands are registered."""
-        expected = {"deploy", "status", "preflight", "rollback", "revisions", "logs", "health", "init"}
+        expected = {
+            "deploy",
+            "status",
+            "preflight",
+            "rollback",
+            "revisions",
+            "logs",
+            "health",
+            "init",
+        }
         actual = set(main.commands.keys())
         assert expected == actual, f"Missing: {expected - actual}, Extra: {actual - expected}"
 
@@ -66,18 +79,22 @@ class TestCLI:
         import yaml
 
         cfg_file = tmp_path / "dds.yaml"
-        cfg_file.write_text(yaml.dump({
-            "project": "test",
-            "registry": "test.azurecr.io",
-            "environments": {
-                "dev": {
-                    "resource_group": "test-rg",
-                    "services": {
-                        "api": {"type": "container-app", "name": "dev-api"},
+        cfg_file.write_text(
+            yaml.dump(
+                {
+                    "project": "test",
+                    "registry": "test.azurecr.io",
+                    "environments": {
+                        "dev": {
+                            "resource_group": "test-rg",
+                            "services": {
+                                "api": {"type": "container-app", "name": "dev-api"},
+                            },
+                        }
                     },
                 }
-            },
-        }))
+            )
+        )
         runner = CliRunner()
         result = runner.invoke(main, ["-c", str(cfg_file), "deploy", "dev", "--dry-run"])
         assert result.exit_code == 0

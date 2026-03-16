@@ -6,9 +6,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
-from rich.console import Console
-
-console = Console()
+from dds.console import console
 
 
 @dataclass
@@ -27,34 +25,30 @@ def check_command(name: str, cmd: str, version_flag: str = "--version") -> Check
         return CheckResult(name=name, passed=False, message=f"'{cmd}' not found in PATH")
 
     try:
-        result = subprocess.run(
-            [cmd, version_flag], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run([cmd, version_flag], capture_output=True, text=True, timeout=10)
         version = result.stdout.strip().split("\n")[0] if result.stdout else "unknown"
         return CheckResult(name=name, passed=True, message=version)
     except (subprocess.TimeoutExpired, OSError) as e:
-        return CheckResult(name=name, passed=True, message=f"found at {path} (version check failed: {e})")
+        return CheckResult(
+            name=name, passed=True, message=f"found at {path} (version check failed: {e})"
+        )
+
+
+def _az_check(args: list[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
+    """Run an az CLI check command with timeout."""
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
 def check_az_login() -> CheckResult:
     """Check if the Azure CLI is authenticated."""
     try:
-        result = subprocess.run(
-            ["az", "account", "show", "--query", "name", "-o", "tsv"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        result = _az_check(["az", "account", "show", "--query", "name", "-o", "tsv"])
         if result.returncode == 0 and result.stdout.strip():
             return CheckResult(
-                name="Azure login",
-                passed=True,
-                message=f"Logged in as: {result.stdout.strip()}",
+                name="Azure login", passed=True, message=f"Logged in as: {result.stdout.strip()}"
             )
         return CheckResult(
-            name="Azure login",
-            passed=False,
-            message="Not logged in. Run 'az login' first.",
+            name="Azure login", passed=False, message="Not logged in. Run 'az login' first."
         )
     except (subprocess.TimeoutExpired, OSError):
         return CheckResult(name="Azure login", passed=False, message="az CLI not responding")
@@ -67,22 +61,15 @@ def check_acr_access(registry: str) -> CheckResult:
 
     registry_name = registry.split(".")[0]
     try:
-        result = subprocess.run(
-            ["az", "acr", "show", "--name", registry_name, "--query", "loginServer", "-o", "tsv"],
-            capture_output=True,
-            text=True,
-            timeout=15,
+        result = _az_check(
+            ["az", "acr", "show", "--name", registry_name, "--query", "loginServer", "-o", "tsv"]
         )
         if result.returncode == 0 and result.stdout.strip():
             return CheckResult(
-                name="ACR access",
-                passed=True,
-                message=f"Registry: {result.stdout.strip()}",
+                name="ACR access", passed=True, message=f"Registry: {result.stdout.strip()}"
             )
         return CheckResult(
-            name="ACR access",
-            passed=False,
-            message=f"Cannot access registry '{registry_name}'. Check permissions.",
+            name="ACR access", passed=False, message=f"Cannot access registry '{registry_name}'"
         )
     except (subprocess.TimeoutExpired, OSError):
         return CheckResult(name="ACR access", passed=False, message="az CLI not responding")
@@ -90,14 +77,11 @@ def check_acr_access(registry: str) -> CheckResult:
 
 def check_docker() -> CheckResult:
     """Check if Docker is available and running."""
-    path = shutil.which("docker")
-    if path is None:
+    if shutil.which("docker") is None:
         return CheckResult(name="Docker", passed=True, message="Not installed (ACR builds only)")
 
     try:
-        result = subprocess.run(
-            ["docker", "info"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
             return CheckResult(name="Docker", passed=True, message="Running")
         return CheckResult(
@@ -111,19 +95,13 @@ def check_docker() -> CheckResult:
 
 def run_preflight(project_cfg: dict | None = None) -> list[CheckResult]:
     """Run all preflight checks and return results."""
-    results: list[CheckResult] = []
+    results = [
+        check_command("Azure CLI", "az"),
+        check_command("Git", "git"),
+        check_az_login(),
+        check_docker(),
+    ]
 
-    # Required tools
-    results.append(check_command("Azure CLI", "az"))
-    results.append(check_command("Git", "git"))
-
-    # Authentication
-    results.append(check_az_login())
-
-    # Optional tools
-    results.append(check_docker())
-
-    # Registry access (if configured)
     if project_cfg:
         registry = project_cfg.get("registry", "")
         if registry:
@@ -145,9 +123,10 @@ def print_preflight(results: list[CheckResult]) -> bool:
             all_passed = False
 
     console.print()
-    if all_passed:
-        console.print("[green]All preflight checks passed.[/green]\n")
-    else:
-        console.print("[red]Some preflight checks failed. Fix them before deploying.[/red]\n")
-
+    msg = (
+        "[green]All preflight checks passed.[/green]"
+        if all_passed
+        else "[red]Some preflight checks failed.[/red]"
+    )
+    console.print(f"{msg}\n")
     return all_passed

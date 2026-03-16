@@ -1,40 +1,39 @@
 """Tests for dds.secrets module."""
 
-import os
 from pathlib import Path
 
-from dds.secrets import _load_env_file, resolve_secrets
+from dds.secrets import load_env_file, resolve_secrets
 
 
 class TestLoadEnvFile:
-    """Tests for _load_env_file()."""
+    """Tests for load_env_file()."""
 
     def test_missing_file(self) -> None:
-        result = _load_env_file("/nonexistent/.env")
+        result = load_env_file("/nonexistent/.env")
         assert result == {}
 
     def test_basic_env_file(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("FOO=bar\nBAZ=qux\n")
-        result = _load_env_file(str(env_file))
+        result = load_env_file(str(env_file))
         assert result == {"FOO": "bar", "BAZ": "qux"}
 
     def test_comments_and_blanks(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("# comment\n\nFOO=bar\n  # another\nBAZ=qux\n")
-        result = _load_env_file(str(env_file))
+        result = load_env_file(str(env_file))
         assert result == {"FOO": "bar", "BAZ": "qux"}
 
     def test_quoted_values(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
-        env_file.write_text('FOO="hello world"\nBAR=\'single\'\n')
-        result = _load_env_file(str(env_file))
+        env_file.write_text("FOO=\"hello world\"\nBAR='single'\n")
+        result = load_env_file(str(env_file))
         assert result == {"FOO": "hello world", "BAR": "single"}
 
     def test_equals_in_value(self, tmp_path: Path) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("DATABASE_URL=postgres://user:pass@host/db?sslmode=require\n")
-        result = _load_env_file(str(env_file))
+        result = load_env_file(str(env_file))
         assert result["DATABASE_URL"] == "postgres://user:pass@host/db?sslmode=require"
 
 

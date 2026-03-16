@@ -1,13 +1,11 @@
-"""Frontend build steps — npm/pnpm/yarn for SPAs and static sites."""
+"""Frontend build steps — npm/pnpm/yarn/bun for SPAs and static sites."""
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-from rich.console import Console
-
-console = Console()
+from dds.console import console
+from dds.utils.azure import run_cmd
 
 
 def detect_package_manager(project_dir: str = ".") -> str:
@@ -30,17 +28,11 @@ def install_deps(
 ) -> None:
     """Install Node.js dependencies."""
     pm = package_manager or detect_package_manager(project_dir)
-    cmd = f"{pm} install"
 
     console.print(f"[yellow]📦 Installing deps ({pm})...[/yellow]")
-    if verbose:
-        console.print(f"[dim]$ cd {project_dir} && {cmd}[/dim]")
-
-    result = subprocess.run(
-        cmd, shell=True, cwd=project_dir, capture_output=not verbose, text=True
-    )
+    result = run_cmd(f"{pm} install", verbose=verbose, cwd=project_dir)
     if result.returncode != 0:
-        console.print(f"[red]Dependency install failed[/red]")
+        console.print("[red]Dependency install failed[/red]")
         if result.stderr:
             console.print(result.stderr[-500:])
         raise RuntimeError(f"{pm} install failed in {project_dir}")
@@ -52,30 +44,11 @@ def build_frontend(
     env: dict[str, str] | None = None,
     verbose: bool = False,
 ) -> None:
-    """Run the frontend build command.
-
-    Supports injecting environment variables (critical for NEXT_PUBLIC_* etc).
-    """
-    import os
-
-    build_env = os.environ.copy()
-    if env:
-        build_env.update(env)
-
+    """Run the frontend build command with optional env var injection."""
     console.print(f"[yellow]🔨 Building frontend ({build_cmd})...[/yellow]")
-    if verbose:
-        console.print(f"[dim]$ cd {project_dir} && {build_cmd}[/dim]")
-
-    result = subprocess.run(
-        build_cmd,
-        shell=True,
-        cwd=project_dir,
-        capture_output=not verbose,
-        text=True,
-        env=build_env,
-    )
+    result = run_cmd(build_cmd, verbose=verbose, cwd=project_dir, env=env)
     if result.returncode != 0:
-        console.print(f"[red]Frontend build failed[/red]")
+        console.print("[red]Frontend build failed[/red]")
         if result.stderr:
             console.print(result.stderr[-500:])
         raise RuntimeError(f"Build failed: {build_cmd}")

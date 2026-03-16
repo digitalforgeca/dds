@@ -1,7 +1,6 @@
 """Tests for dds.config module."""
 
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -27,9 +26,7 @@ class TestLoadConfig:
                     "environments": {
                         "dev": {
                             "resource_group": "test-rg",
-                            "services": {
-                                "api": {"type": "container-app", "name": "dev-api"}
-                            },
+                            "services": {"api": {"type": "container-app", "name": "dev-api"}},
                         }
                     },
                 }
