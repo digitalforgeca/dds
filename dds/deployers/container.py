@@ -7,6 +7,7 @@ from typing import Any
 from rich.console import Console
 
 from dds.builders.docker import build_acr, build_and_push_local, resolve_image_tag
+from dds.secrets import resolve_secrets
 from dds.utils.azure import az, az_json
 from dds.utils.git import git_info
 
@@ -86,17 +87,18 @@ def deploy_container_app(
             verbose=verbose,
         )
 
-    # Step 2: Deploy to Container App
+    # Step 2: Resolve secrets + env vars
+    all_env = resolve_secrets(svc_cfg, env_cfg, project_cfg, verbose=verbose)
+
+    # Step 3: Deploy to Container App
     console.print(f"\n[yellow]🚢 Updating Container App: {app_name}...[/yellow]")
     update_cmd = (
         f"containerapp update --name {app_name} --resource-group {rg} "
         f"--image {image}"
     )
 
-    # Set runtime environment variables if specified
-    env_vars = svc_cfg.get("env", {})
-    if env_vars:
-        env_str = " ".join(f"{k}={v}" for k, v in env_vars.items())
+    if all_env:
+        env_str = " ".join(f"{k}={v}" for k, v in all_env.items())
         update_cmd += f" --set-env-vars {env_str}"
 
     az(update_cmd, verbose=verbose)
