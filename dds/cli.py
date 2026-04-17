@@ -19,15 +19,61 @@ def _load_cfg(ctx: click.Context) -> dict:
     return cfg
 
 
-def _load_env(ctx: click.Context, environment: str) -> tuple[dict, dict]:
-    """Load config and resolve environment. Returns (full_cfg, env_cfg)."""
+def _load_env(ctx: click.Context, environment: str, *, require_access: bool = False) -> tuple[dict, dict]:
+    """Load config and resolve environment. Returns (full_cfg, env_cfg).
+
+    If require_access=True, checks the environment's 'access' setting:
+      - "restricted": only allowed deployers (by git email) can deploy
+      - "open" or absent: anyone can deploy
+    """
     cfg = _load_cfg(ctx)
     env_cfg = cfg.get("environments", {}).get(environment)
     if env_cfg is None:
         console.print(f"[red]Error:[/red] Unknown environment '{environment}'.")
         console.print(f"Available: {', '.join(cfg.get('environments', {}).keys())}")
         raise SystemExit(1)
+
+    if require_access:
+        _check_access(environment, env_cfg)
+
     return cfg, env_cfg
+
+
+def _check_access(environment: str, env_cfg: dict) -> None:
+    """Enforce environment access restrictions.
+
+    If an environment has `access: restricted` and an `allowed_deployers` list,
+    only git users whose email matches are allowed to deploy.
+    """
+    access = env_cfg.get("access", "open")
+    if access != "restricted":
+        return
+
+    allowed = env_cfg.get("allowed_deployers", [])
+    if not allowed:
+        return  # restricted but no allowlist = no restriction in practice
+
+    from dds.utils.git import git_info
+    info = git_info()
+    deployer_email = info.get("email", "")
+
+    if deployer_email not in allowed:
+        console.print(
+            f"[red]❌ Access denied:[/red] Environment [bold]{environment}[/bold] "
+            f"is restricted to: {', '.join(allowed)}"
+        )
+        console.print(
+            f"  Your git email: [bold]{deployer_email or '(not configured)'}[/bold]"
+        )
+        console.print(
+            "  Contact a project admin if you need production access."
+        )
+        raise SystemExit(1)
+
+    if True:  # verbose would be nice but we're in a static helper
+        console.print(
+            f"  [dim]Access check: {deployer_email} ✓ ({environment})[/dim]"
+        )
 
 
 def _make_ctx(click_ctx: click.Context, environment: str, service: str) -> DeployContext:
@@ -76,7 +122,7 @@ def deploy(
     skip_health: bool,
 ) -> None:
     """Deploy services to an environment."""
-    cfg, env_cfg = _load_env(ctx, environment)
+    cfg, env_cfg = _load_env(ctx, environment, require_access=not dry_run)
 
     if not skip_preflight and not dry_run:
         from dds.preflight import print_preflight, run_preflight
@@ -166,6 +212,8 @@ def preflight(ctx: click.Context) -> None:
 @click.pass_context
 def rollback(ctx: click.Context, environment: str, service: str, revision: str | None) -> None:
     """Roll back a service to a previous revision."""
+    # Rollback is a deploy action — enforce access controls
+    _load_env(ctx, environment, require_access=True)
     deploy_ctx = _make_ctx(ctx, environment, service)
     _require_container(deploy_ctx, "Rollback")
     from dds.rollback import rollback_container_app

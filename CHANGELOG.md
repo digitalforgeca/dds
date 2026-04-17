@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-04-17
+
+### Added
+- **SWA deployer** — `type: swa` for Azure Static Web Apps. Fetches deployment token via `az staticwebapp secrets`, deploys via `npx @azure/static-web-apps-cli`. Includes CIFS mount workaround (runs `swa deploy` from `/tmp` to avoid .NET `ZipArchive` failures on Azure Files mounts).
+- **Build env verification** — `verify_env` config block with `must_contain` and `must_not_contain` patterns. Greps built JS bundles post-build to catch environment mismatches (e.g., dev build with prod KC realm). Fails the deploy with a clear error.
+- **Vite `.env.production` handling** — SWA deployer writes the target env file to `.env.production` (Vite's highest-priority file during builds) and restores the original after build. Prevents the silent override bug where `.env.production` trumps `.env`.
+- **Environment access controls** — `access: restricted` + `allowed_deployers` list per environment. Checks deployer's git email against the allowlist before any deploy or rollback. Prevents unauthorized production deployments.
+- **Git email in `git_info()`** — now returns `email` from `git config user.email` for access control checks.
+
+### Changed
+- Deploy and rollback commands now enforce access controls when `access: restricted` is set.
+- Deployer registry now includes `swa` type alongside `container-app`, `static-site`, and `database`.
+
 ## [0.2.0] — 2026-03-16
 
 ### Added

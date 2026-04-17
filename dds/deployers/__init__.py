@@ -12,6 +12,7 @@ from dds.context import DeployContext
 _DEPLOYER_REGISTRY: dict[str, tuple[str, str, str]] = {
     "container-app": ("dds.deployers.container", "deploy_container_app", "status_container_app"),
     "static-site": ("dds.deployers.static", "deploy_static_site", "status_static_site"),
+    "swa": ("dds.deployers.swa", "deploy_swa", "status_swa"),
     "database": ("dds.deployers.database", "provision_database", "status_database"),
 }
 

@@ -16,5 +16,6 @@ def git_info() -> dict[str, str]:
     return {
         "hash": _run("git rev-parse --short HEAD"),
         "branch": _run("git rev-parse --abbrev-ref HEAD"),
+        "email": _run("git config user.email"),
         "build_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
