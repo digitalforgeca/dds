@@ -2,9 +2,9 @@
 
 > *"He who would learn to fly one day must first learn to stand and walk and run and climb and dance; one cannot fly into flying."*
 
-**Version:** 0.5.0 · **License:** MIT · **Python:** 3.10+
+**Version:** 0.6.0 · **License:** MIT · **Python:** 3.10+
 
-Platform-agnostic deployment tooling with a provider abstraction layer. Ships with **Azure** (Container Apps, Static Web Apps, Blob Storage, Postgres Flex) and **Docker/SSH** (any Docker host, `docker compose`, rsync). One config file, one CLI, every environment, any cloud.
+Platform-agnostic deployment tooling with a provider abstraction layer. Ships with **Azure**, **Docker/SSH**, and a **Custom** provider that lets you define shell commands in `dds.yaml` — deploy to Kubernetes, Fly.io, Railway, Dokku, bare metal, or anything else without writing Python. One config file, one CLI, every environment, any cloud.
 
 ---
 
@@ -236,14 +236,50 @@ environments:
         database: mydb
 ```
 
+### Custom Provider Example (Kubernetes)
+
+```yaml
+provider: custom
+
+commands:
+  container-app:
+    build: "docker build -t {registry}/{service}:{git_hash} ."
+    deploy: "kubectl set image deployment/{service} {service}={registry}/{service}:{git_hash}"
+    rollback: "kubectl rollout undo deployment/{service}"
+    logs: "kubectl logs deployment/{service} --tail={tail} {follow_flag}"
+    health: "kubectl rollout status deployment/{service} --timeout=60s"
+    status: "kubectl get deployment/{service} -o wide"
+    revisions: "kubectl rollout history deployment/{service}"
+  static-site:
+    build: "npm run build"
+    deploy: "aws s3 sync {build_dir} s3://{bucket}/ --delete"
+  preflight:
+    checks:
+      - "kubectl cluster-info"
+      - "docker version"
+
+environments:
+  prod:
+    registry: myregistry.io
+    bucket: my-prod-bucket
+    services:
+      api:
+        type: container-app
+      web:
+        type: static-site
+        build_dir: dist
+```
+
+Any config key becomes an interpolation variable: `{host}`, `{port}`, `{registry}`, `{compose_file}`, `{bucket}` — whatever you put in `dds.yaml`, you can use in commands. Git info (`{git_hash}`, `{git_branch}`, `{build_time}`) is always available.
+
 ### Service Types
 
-| Type | Azure | Docker/SSH |
-|------|-------|------------|
-| `container-app` | Container Apps (ACR build) | `docker compose build/up` over SSH |
-| `static-site` | Blob Storage `$web` | rsync/scp to remote web root |
-| `swa` | Static Web Apps | ❌ Not supported (use `static-site`) |
-| `database` | Postgres Flexible Server | `docker exec` into Postgres container |
+| Type | Azure | Docker/SSH | Custom |
+|------|-------|------------|--------|
+| `container-app` | Container Apps (ACR build) | `docker compose build/up` over SSH | Your commands |
+| `static-site` | Blob Storage `$web` | rsync/scp to remote web root | Your commands |
+| `swa` | Static Web Apps | ❌ Not supported | ❌ Not supported |
+| `database` | Postgres Flexible Server | `docker exec` into Postgres container | Your commands |
 
 ### Build Strategies (Container Apps)
 
@@ -287,13 +323,20 @@ dds/
 │   │   │   ├── secrets.py    # Key Vault
 │   │   │   ├── preflight.py  # az login, ACR access checks
 │   │   │   └── utils.py      # az(), az_json() wrappers
-│   │   └── docker/         # Docker/SSH provider
-│   │       ├── container.py  # docker compose over SSH (build, deploy, logs, health)
-│   │       ├── static.py     # rsync/scp to remote host
-│   │       ├── database.py   # docker exec into Postgres containers
-│   │       ├── secrets.py    # .env file reader
-│   │       ├── preflight.py  # SSH + remote Docker checks
-│   │       └── utils.py      # ssh() wrapper, host/compose resolution
+│   │   ├── docker/         # Docker/SSH provider
+│   │   │   ├── container.py  # docker compose over SSH (build, deploy, logs, health)
+│   │   │   ├── static.py     # rsync/scp to remote host
+│   │   │   ├── database.py   # docker exec into Postgres containers
+│   │   │   ├── secrets.py    # .env file reader
+│   │   │   ├── preflight.py  # SSH + remote Docker checks
+│   │   │   └── utils.py      # ssh() wrapper, host/compose resolution
+│   │   └── custom/         # Config-driven command template provider
+│   │       ├── template.py   # SafeFormatter, interpolation, variable builder
+│   │       ├── container.py  # Command-template container lifecycle
+│   │       ├── static.py     # Command-template static site
+│   │       ├── database.py   # Command-template database provisioning
+│   │       ├── secrets.py    # Command-template or .env fallback
+│   │       └── preflight.py  # Run user-defined check commands
 │   ├── deployers/
 │   │   ├── __init__.py     # Dispatch → resolves provider + routes
 │   │   ├── container.py    # Backward-compat shim
@@ -323,7 +366,7 @@ dds/
 
 ### Design Principles
 
-- **Provider abstraction** — cloud-specific logic lives in `providers/<name>/`; adding a new cloud means implementing the base classes, not touching core. Ships with `azure` and `docker` providers.
+- **Provider abstraction** — cloud-specific logic lives in `providers/<name>/`; adding a new cloud means implementing the base classes, not touching core. Ships with `azure`, `docker`, and `custom` providers.
 - **No CI dependency** — deploys work from any terminal with the provider CLI and `git`
 - **Remote-first builds** — ACR remote builds for Azure, `docker compose build` over SSH for Docker, extensible per provider
 - **Preflight before, health after** — catch problems on both ends of a deploy

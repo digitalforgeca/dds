@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-04-21
+
+### Added
+- **Custom provider** — config-driven command templates for any platform. Define shell commands in `dds.yaml` under `commands:`, DDS handles orchestration:
+  - **Template engine** — `SafeFormatter` with safe interpolation (unresolved `{vars}` left intact, no KeyError). Variables auto-populated from config hierarchy + git info.
+  - **Variable resolution** — service config > env config > project config > computed (git_hash, git_branch, build_time, etc.). Any key in `dds.yaml` is available as `{key}` in commands.
+  - **Command resolution** — commands merge across config layers (project < env < service). Override specific commands at any level.
+  - **SSH wrapping** — set `ssh: true` or `remote: true` in command section to wrap commands in `ssh {host}`.
+  - **All lifecycle methods** — `container-app` (build, deploy, rollback, revisions, logs, system_logs, health, status), `static-site` (build, deploy, status), `database` (provision, check, status), `preflight` (checks list), `secrets` (fetch command or .env fallback).
+  - **Health retries** — health command retried with configurable delay, same as built-in providers.
+- **Template engine tests** — SafeFormatter, interpolation, build_variables, resolve_commands with full config hierarchy coverage.
+
 ## [0.5.0] — 2026-04-21
 
 ### Added

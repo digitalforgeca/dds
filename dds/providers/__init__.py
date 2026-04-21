@@ -17,6 +17,7 @@ from dds.providers.base import (
 _PROVIDER_MODULES: dict[str, str] = {
     "azure": "dds.providers.azure",
     "docker": "dds.providers.docker",
+    "custom": "dds.providers.custom",
 }
 
 # Cache of instantiated provider modules

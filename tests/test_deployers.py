@@ -71,3 +71,16 @@ class TestDeployerRegistry:
 
         with pytest.raises(SystemExit):
             get_swa_provider("docker")
+
+    def test_custom_providers_importable(self) -> None:
+        """Custom provider should return proper provider instances."""
+        assert isinstance(get_container_provider("custom"), ContainerProvider)
+        assert isinstance(get_static_provider("custom"), StaticProvider)
+        assert isinstance(get_database_provider("custom"), DatabaseProvider)
+
+    def test_custom_swa_not_supported(self) -> None:
+        """Custom provider should not support SWA."""
+        import pytest
+
+        with pytest.raises(SystemExit):
+            get_swa_provider("custom")
