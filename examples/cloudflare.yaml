@@ -1,0 +1,94 @@
+# DDS — Cloudflare deployment via the custom provider
+#
+# Deploy Workers, Pages, and D1 databases using Wrangler CLI.
+# Requires: wrangler (npm i -g wrangler), authenticated (wrangler login).
+#
+# Usage:
+#   dds deploy prod              # Deploy all services
+#   dds deploy prod -s api       # Deploy just the API worker
+#   dds status prod              # Show status of all services
+#   dds logs prod -s api         # Tail API worker logs
+#   dds rollback prod -s api     # Rollback API worker
+#   dds preflight prod           # Check wrangler auth
+#
+project: my-cloudflare-app
+provider: custom
+
+# Cloudflare-specific config
+account_id: "your-cloudflare-account-id"
+
+commands:
+  # ── Workers (container-app maps to serverless workers) ──────────────
+  container-app:
+    build: "wrangler deploy --dry-run --outdir .dds-build/{service}"
+    deploy: "wrangler deploy --name {service} --env {env}"
+    rollback: "wrangler rollback --name {service}"
+    logs: "wrangler tail {service} --format pretty"
+    health: "curl -sf https://{service}.{worker_domain}/health"
+    status: "wrangler deployments list --name {service} | head -10"
+    revisions: "wrangler deployments list --name {service}"
+
+  # ── Pages (static-site maps to Cloudflare Pages) ───────────────────
+  static-site:
+    build: "{build_cmd}"
+    deploy: "wrangler pages deploy {build_dir} --project-name {pages_project} --branch {branch}"
+    status: "wrangler pages project list | grep {pages_project}"
+
+  # ── D1 Database ─────────────────────────────────────────────────────
+  database:
+    check: "wrangler d1 list | grep {database}"
+    provision: "wrangler d1 create {database}"
+    status: "wrangler d1 info {database}"
+
+  # ── Preflight ───────────────────────────────────────────────────────
+  preflight:
+    checks:
+      - "wrangler whoami"
+      - "node --version"
+
+  # ── Secrets ─────────────────────────────────────────────────────────
+  secrets:
+    fetch: "wrangler secret list --name {vault_name} | grep {secret_name}"
+
+environments:
+  # ── Production ──────────────────────────────────────────────────────
+  prod:
+    env: production
+    worker_domain: "your-subdomain.workers.dev"
+    branch: main
+    services:
+      api:
+        type: container-app
+        # Wrangler reads wrangler.toml for the actual worker config.
+        # DDS orchestrates the deploy lifecycle + health checks.
+        health_path: /health
+
+      web:
+        type: static-site
+        build_cmd: "npm run build"
+        build_dir: dist
+        pages_project: my-app-web
+
+      db:
+        type: database
+        database: my-app-db
+
+  # ── Staging ─────────────────────────────────────────────────────────
+  staging:
+    env: staging
+    worker_domain: "your-subdomain.workers.dev"
+    branch: staging
+    services:
+      api:
+        type: container-app
+        health_path: /health
+
+      web:
+        type: static-site
+        build_cmd: "npm run build"
+        build_dir: dist
+        pages_project: my-app-web
+
+      db:
+        type: database
+        database: my-app-db-staging
