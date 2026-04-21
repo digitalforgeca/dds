@@ -214,7 +214,7 @@ environments:
 ```yaml
 project: my-forge
 provider: docker
-host: dforge-vps              # SSH host (from ~/.ssh/config or IP)
+host: my-server               # SSH host (from ~/.ssh/config or IP)
 
 environments:
   prod:
