@@ -12,7 +12,8 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.2.0" in result.output
+        from dds import __version__
+        assert __version__ in result.output
 
     def test_help(self) -> None:
         runner = CliRunner()

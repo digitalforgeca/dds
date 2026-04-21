@@ -39,3 +39,14 @@ class DeployContext:
     @property
     def service_type(self) -> str:
         return self.svc_cfg.get("type", "")
+
+    @property
+    def provider(self) -> str:
+        """Resolve provider from config hierarchy. Default: 'azure'."""
+        if "provider" in self.svc_cfg:
+            return self.svc_cfg["provider"]
+        if "provider" in self.env_cfg:
+            return self.env_cfg["provider"]
+        if "provider" in self.project_cfg:
+            return self.project_cfg["provider"]
+        return "azure"

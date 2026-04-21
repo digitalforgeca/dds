@@ -40,18 +40,14 @@ def _load_env(ctx: click.Context, environment: str, *, require_access: bool = Fa
 
 
 def _check_access(environment: str, env_cfg: dict) -> None:
-    """Enforce environment access restrictions.
-
-    If an environment has `access: restricted` and an `allowed_deployers` list,
-    only git users whose email matches are allowed to deploy.
-    """
+    """Enforce environment access restrictions."""
     access = env_cfg.get("access", "open")
     if access != "restricted":
         return
 
     allowed = env_cfg.get("allowed_deployers", [])
     if not allowed:
-        return  # restricted but no allowlist = no restriction in practice
+        return
 
     from dds.utils.git import git_info
     info = git_info()
@@ -70,7 +66,7 @@ def _check_access(environment: str, env_cfg: dict) -> None:
         )
         raise SystemExit(1)
 
-    if True:  # verbose would be nice but we're in a static helper
+    if True:
         console.print(
             f"  [dim]Access check: {deployer_email} ✓ ({environment})[/dim]"
         )
@@ -100,7 +96,7 @@ def _require_container(ctx: DeployContext, action: str) -> None:
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 @click.pass_context
 def main(ctx: click.Context, config: str, verbose: bool) -> None:
-    """Daedalus Deployment System — cross-platform Azure deployments."""
+    """Daedalus Deployment System — cross-platform deployments."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config
     ctx.obj["verbose"] = verbose
@@ -140,6 +136,7 @@ def deploy(
         raise SystemExit(1)
 
     from dds.deployers import dispatch
+    from dds.providers import get_container_provider
 
     failed: list[str] = []
     for svc_name, svc_cfg in targets.items():
@@ -153,7 +150,9 @@ def deploy(
             )
             console.print(
                 f"[dim]DRY RUN:[/dim] Would deploy [bold]{svc_name}[/bold] "
-                f"(type: {deploy_ctx.service_type}{f', strategy: {strategy}' if strategy else ''})"
+                f"(type: {deploy_ctx.service_type}"
+                f"{f', strategy: {strategy}' if strategy else ''}"
+                f", provider: {deploy_ctx.provider})"
             )
             continue
 
@@ -165,9 +164,8 @@ def deploy(
                 and deploy_ctx.service_type == "container-app"
                 and svc_cfg.get("health_path")
             ):
-                from dds.health import verify_container_health
-
-                if not verify_container_health(deploy_ctx):
+                provider = get_container_provider(deploy_ctx.provider)
+                if not provider.health(deploy_ctx):
                     console.print(
                         f"[yellow]⚠️  {svc_name} deployed but health check failed. "
                         f"Consider: dds rollback {environment} -s {svc_name}[/yellow]"
@@ -212,13 +210,14 @@ def preflight(ctx: click.Context) -> None:
 @click.pass_context
 def rollback(ctx: click.Context, environment: str, service: str, revision: str | None) -> None:
     """Roll back a service to a previous revision."""
-    # Rollback is a deploy action — enforce access controls
     _load_env(ctx, environment, require_access=True)
     deploy_ctx = _make_ctx(ctx, environment, service)
     _require_container(deploy_ctx, "Rollback")
-    from dds.rollback import rollback_container_app
 
-    if not rollback_container_app(deploy_ctx, target_revision=revision):
+    from dds.providers import get_container_provider
+
+    provider = get_container_provider(deploy_ctx.provider)
+    if not provider.rollback(deploy_ctx, target_revision=revision):
         raise SystemExit(1)
 
 
@@ -230,9 +229,11 @@ def revisions(ctx: click.Context, environment: str, service: str) -> None:
     """Show revision history for a container app service."""
     deploy_ctx = _make_ctx(ctx, environment, service)
     _require_container(deploy_ctx, "Revisions")
-    from dds.rollback import show_revisions
 
-    show_revisions(deploy_ctx)
+    from dds.providers import get_container_provider
+
+    provider = get_container_provider(deploy_ctx.provider)
+    provider.revisions(deploy_ctx)
 
 
 @main.command()
@@ -248,20 +249,11 @@ def logs(
     """Tail or stream logs from a container app service."""
     deploy_ctx = _make_ctx(ctx, environment, service)
     _require_container(deploy_ctx, "Logs")
-    from dds.logs import system_logs, tail_logs
 
-    if show_system:
-        system_logs(
-            deploy_ctx.app_name, deploy_ctx.resource_group, tail=tail, verbose=deploy_ctx.verbose
-        )
-    else:
-        tail_logs(
-            deploy_ctx.app_name,
-            deploy_ctx.resource_group,
-            follow=follow,
-            tail=tail,
-            verbose=deploy_ctx.verbose,
-        )
+    from dds.providers import get_container_provider
+
+    provider = get_container_provider(deploy_ctx.provider)
+    provider.logs(deploy_ctx, follow=follow, tail=tail, system=show_system)
 
 
 @main.command()
@@ -272,9 +264,11 @@ def health(ctx: click.Context, environment: str, service: str) -> None:
     """Run health checks on a deployed service."""
     deploy_ctx = _make_ctx(ctx, environment, service)
     _require_container(deploy_ctx, "Health checks")
-    from dds.health import verify_container_health
 
-    if not verify_container_health(deploy_ctx):
+    from dds.providers import get_container_provider
+
+    provider = get_container_provider(deploy_ctx.provider)
+    if not provider.health(deploy_ctx):
         raise SystemExit(1)
 
 

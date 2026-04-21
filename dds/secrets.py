@@ -1,4 +1,4 @@
-"""Secrets management — resolve secrets from Azure Key Vault, env vars, or .env files."""
+"""Secrets management — resolve secrets from provider vaults, env vars, or .env files."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from dds.console import console
-from dds.utils.azure import az
 
 
 def resolve_secrets(
@@ -21,7 +20,7 @@ def resolve_secrets(
     Priority layers (later overrides earlier):
     1. env_file (.env path, environment-level)
     2. Inline env vars (service-level)
-    3. Secrets (Key Vault or env var references)
+    3. Secrets (provider vault or env var references)
     """
     resolved: dict[str, str] = {}
 
@@ -35,32 +34,48 @@ def resolve_secrets(
     if isinstance(inline_env, dict):
         resolved.update({k: str(v) for k, v in inline_env.items()})
 
-    # Layer 3: secrets
+    # Layer 3: secrets (provider vault or env vars)
     vault_name = env_cfg.get("key_vault", project_cfg.get("key_vault", ""))
-    for secret in svc_cfg.get("secrets", []):
-        name = secret.get("name", "")
-        if not name:
-            continue
+    secrets_list = svc_cfg.get("secrets", [])
 
-        vault_key = secret.get("vault_key", "")
-        env_key = secret.get("env", "")
+    if secrets_list:
+        # Lazy-load secret provider only when vault secrets are needed
+        secret_provider = None
+        for secret in secrets_list:
+            name = secret.get("name", "")
+            if not name:
+                continue
 
-        if vault_key and vault_name:
-            value = _fetch_vault_secret(vault_name, vault_key, verbose=verbose)
-            if value is not None:
-                resolved[name] = value
+            vault_key = secret.get("vault_key", "")
+            env_key = secret.get("env", "")
+
+            if vault_key and vault_name:
+                if secret_provider is None:
+                    from dds.providers import get_secret_provider, resolve_provider
+
+                    provider_name = resolve_provider(svc_cfg, env_cfg, project_cfg)
+                    secret_provider = get_secret_provider(provider_name)
+
+                value = secret_provider.fetch(vault_name, vault_key, verbose=verbose)
+                if value is not None:
+                    resolved[name] = value
+                else:
+                    console.print(
+                        f"[yellow]⚠️  Secret '{name}' not found in vault "
+                        f"'{vault_name}'[/yellow]"
+                    )
+            elif env_key:
+                value = os.environ.get(env_key, "")
+                if value:
+                    resolved[name] = value
+                else:
+                    console.print(
+                        f"[yellow]⚠️  Secret '{name}': env var '{env_key}' not set[/yellow]"
+                    )
             else:
                 console.print(
-                    f"[yellow]⚠️  Secret '{name}' not found in vault '{vault_name}'[/yellow]"
+                    f"[yellow]⚠️  Secret '{name}' has no vault_key or env source[/yellow]"
                 )
-        elif env_key:
-            value = os.environ.get(env_key, "")
-            if value:
-                resolved[name] = value
-            else:
-                console.print(f"[yellow]⚠️  Secret '{name}': env var '{env_key}' not set[/yellow]")
-        else:
-            console.print(f"[yellow]⚠️  Secret '{name}' has no vault_key or env source[/yellow]")
 
     return resolved
 
@@ -80,7 +95,6 @@ def load_env_file(path: str, verbose: bool = False) -> dict[str, str]:
             continue
         key, _, value = line.partition("=")
         key, value = key.strip(), value.strip()
-        # Strip surrounding quotes
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
             value = value[1:-1]
         result[key] = value
@@ -88,17 +102,3 @@ def load_env_file(path: str, verbose: bool = False) -> dict[str, str]:
     if verbose:
         console.print(f"[dim]Loaded {len(result)} vars from {path}[/dim]")
     return result
-
-
-def _fetch_vault_secret(vault_name: str, secret_name: str, verbose: bool = False) -> str | None:
-    """Fetch a secret value from Azure Key Vault."""
-    try:
-        value = az(
-            f"keyvault secret show --vault-name {vault_name} "
-            f"--name {secret_name} --query value -o tsv",
-            verbose=verbose,
-            capture=True,
-        )
-        return value if value else None
-    except RuntimeError:
-        return None

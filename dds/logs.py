@@ -1,10 +1,11 @@
-"""Container App log streaming — tail logs from Azure Container Apps."""
+"""Container App log streaming — backward compatibility re-exports.
+
+Logic has moved to dds.providers.azure.container.AzureContainerProvider.logs().
+"""
 
 from __future__ import annotations
 
-import subprocess
-
-from dds.console import console
+from dds.context import DeployContext
 
 
 def tail_logs(
@@ -15,52 +16,23 @@ def tail_logs(
     container: str | None = None,
     verbose: bool = False,
 ) -> None:
-    """Stream or tail logs from a Container App."""
-    cmd_parts = [
-        "az",
-        "containerapp",
-        "logs",
-        "show",
-        "--name",
-        app_name,
-        "--resource-group",
-        rg,
-        "--type",
-        "console",
-        "--tail",
-        str(tail),
-    ]
-    if follow:
-        cmd_parts.append("--follow")
-    if container:
-        cmd_parts.extend(["--container", container])
+    """Stream or tail logs (delegates to provider via DeployContext).
 
-    if verbose:
-        console.print(f"[dim]$ {' '.join(cmd_parts)}[/dim]")
+    This function signature is kept for backward compat. New code should use
+    the provider directly via get_container_provider().logs().
+    """
+    from dds.providers.azure.container import AzureContainerProvider
 
-    console.print(f"[bold]📋 Logs: {app_name}[/bold]")
-    if follow:
-        console.print("[dim]Following logs... (Ctrl+C to stop)[/dim]\n")
-
-    try:
-        proc = subprocess.run(cmd_parts, text=True, capture_output=not follow)
-
-        if not follow and proc.stdout:
-            for line in proc.stdout.strip().split("\n"):
-                if line.strip():
-                    console.print(line)
-
-        if proc.returncode != 0 and proc.stderr:
-            errors = [
-                line
-                for line in proc.stderr.split("\n")
-                if line.strip() and not line.startswith("WARNING:")
-            ]
-            if errors:
-                console.print(f"[red]{''.join(errors)}[/red]")
-
-    except KeyboardInterrupt:
-        console.print("\n[dim]Log stream stopped.[/dim]")
+    # Build a minimal context for the legacy call signature
+    ctx = DeployContext(
+        name="legacy",
+        svc_cfg={"type": "container-app", "name": app_name},
+        env_cfg={"resource_group": rg},
+        project_cfg={},
+        verbose=verbose,
+    )
+    provider = AzureContainerProvider()
+    provider.logs(ctx, follow=follow, tail=tail, system=False)
 
 
 def system_logs(
@@ -69,30 +41,13 @@ def system_logs(
     tail: int = 50,
     verbose: bool = False,
 ) -> None:
-    """Show system/platform logs for a Container App."""
-    cmd_parts = [
-        "az",
-        "containerapp",
-        "logs",
-        "show",
-        "--name",
-        app_name,
-        "--resource-group",
-        rg,
-        "--type",
-        "system",
-        "--tail",
-        str(tail),
-    ]
-
-    if verbose:
-        console.print(f"[dim]$ {' '.join(cmd_parts)}[/dim]")
-
-    console.print(f"[bold]⚙️  System logs: {app_name}[/bold]\n")
-    result = subprocess.run(cmd_parts, capture_output=True, text=True)
-    if result.stdout:
-        for line in result.stdout.strip().split("\n"):
-            if line.strip():
-                console.print(line)
-    elif result.returncode != 0:
-        console.print("[red]Failed to fetch system logs[/red]")
+    """Show system logs (delegates to provider)."""
+    ctx = DeployContext(
+        name="legacy",
+        svc_cfg={"type": "container-app", "name": app_name},
+        env_cfg={"resource_group": rg},
+        project_cfg={},
+        verbose=verbose,
+    )
+    provider = AzureContainerProvider()
+    provider.logs(ctx, follow=False, tail=tail, system=True)

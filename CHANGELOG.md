@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-04-21
+
+### Added
+- **Provider abstraction layer** — `dds/providers/base.py` defines abstract base classes: `ContainerProvider`, `StaticProvider`, `SwaProvider`, `DatabaseProvider`, `SecretProvider`, `PreflightProvider`. New clouds implement these interfaces without touching core.
+- **Provider registry** — `dds/providers/__init__.py` with lazy-loaded provider modules. `resolve_provider()` reads `provider` field from service → environment → project config (default: `"azure"`).
+- **`provider` config field** — optional at project, environment, or service level. Environment overrides project; service overrides environment. Omitting defaults to `"azure"` for full backward compatibility.
+- **`dds/providers/azure/`** — all Azure-specific logic extracted into a self-contained provider package: `container.py` (Container Apps build/deploy/rollback/logs/health), `static.py` (Blob Storage), `swa.py` (Static Web Apps), `database.py` (Postgres Flex), `secrets.py` (Key Vault), `preflight.py` (az login/ACR access), `utils.py` (az/az_json wrappers).
+- **`dds/utils/shell.py`** — generic `run_cmd()` subprocess wrapper, decoupled from Azure.
+- **Provider resolution in DeployContext** — `ctx.provider` property resolves from config hierarchy.
+- **New deployer tests** — provider instantiation, `resolve_provider()` hierarchy, dispatch callability.
+
+### Changed
+- **Dispatch is now provider-aware** — `dds.deployers.dispatch()` resolves the provider from `DeployContext` and routes to the correct provider implementation.
+- **CLI commands route through providers** — `rollback`, `revisions`, `logs`, `health` resolve the provider dynamically instead of importing Azure modules directly.
+- **Secrets resolution uses SecretProvider** — vault lookups delegate to the resolved provider's `SecretProvider.fetch()` instead of hardcoded Azure Key Vault calls.
+- **Preflight checks are provider-aware** — generic checks (git, docker) run always; provider-specific checks (az login, ACR access) delegate to `PreflightProvider.checks()`.
+- **`builders/frontend.py`** now imports from `utils.shell` (not `utils.azure`), breaking a circular import.
+- **`builders/docker.py`** retains generic local Docker build/push; ACR-specific `build_acr()` moved to Azure container provider.
+- Old top-level modules (`health.py`, `rollback.py`, `logs.py`) and deployer modules (`deployers/container.py`, etc.) kept as thin backward-compat shims that delegate to providers.
+
 ## [0.3.0] — 2026-04-17
 
 ### Added

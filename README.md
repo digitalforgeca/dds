@@ -2,9 +2,9 @@
 
 > *"He who would learn to fly one day must first learn to stand and walk and run and climb and dance; one cannot fly into flying."*
 
-**Version:** 0.2.0 · **License:** MIT · **Python:** 3.10+
+**Version:** 0.4.0 · **License:** MIT · **Python:** 3.10+
 
-Cross-platform deployment tooling for Azure Container Apps, static sites, and managed services. One config file, one CLI, every environment.
+Platform-agnostic deployment tooling with a provider abstraction layer. Ships with Azure support (Container Apps, Static Web Apps, Blob Storage, Postgres Flex). One config file, one CLI, every environment, any cloud.
 
 ---
 
@@ -37,7 +37,7 @@ pipx install dds-deploy
 | Tool | Required | Notes |
 |------|----------|-------|
 | Python 3.10+ | ✅ | Runtime |
-| Azure CLI (`az`) | ✅ | Must be logged in (`az login`) |
+| Provider CLI | ✅ | `az` for Azure, `aws` for AWS, `gcloud` for GCP |
 | Git | ✅ | Used for image tagging |
 | Docker | ❌ | Only needed for `build_strategy: local` |
 
@@ -160,6 +160,7 @@ DDS is configured via a `dds.yaml` file in your project root.
 ```yaml
 # DDS — Daedalus Deployment System
 project: my-project
+# provider: azure                      # Cloud provider (azure|aws|gcp|docker) — default: azure
 registry: myregistry.azurecr.io
 # key_vault: my-shared-keyvault        # Optional: project-wide Key Vault
 
@@ -238,28 +239,43 @@ Secrets resolve in priority layers (later layers override earlier):
 ```
 dds/
 ├── dds/
-│   ├── __init__.py         # Version (0.2.0)
+│   ├── __init__.py         # Version (0.4.0)
 │   ├── cli.py              # Click CLI — 8 commands
 │   ├── config.py           # dds.yaml loader + template generator
-│   ├── preflight.py        # Pre-deploy validation (az, git, docker, auth, ACR)
-│   ├── secrets.py          # Secret resolution (Key Vault, .env, env vars)
-│   ├── health.py           # Post-deploy health verification (retry + HTTP)
-│   ├── rollback.py         # Revision rollback + history
-│   ├── logs.py             # Container App log streaming (console + system)
+│   ├── context.py          # DeployContext dataclass (with provider resolution)
+│   ├── preflight.py        # Generic + provider-delegated pre-deploy validation
+│   ├── secrets.py          # Secret resolution (provider vaults, .env, env vars)
+│   ├── health.py           # Backward-compat wrapper → provider.health()
+│   ├── rollback.py         # Backward-compat wrapper → provider.rollback()
+│   ├── logs.py             # Backward-compat wrapper → provider.logs()
+│   ├── providers/
+│   │   ├── __init__.py     # Provider registry + factory
+│   │   ├── base.py         # Abstract base classes (ContainerProvider, etc.)
+│   │   └── azure/          # Azure provider implementation
+│   │       ├── __init__.py
+│   │       ├── container.py  # Container Apps (build, deploy, rollback, logs, health)
+│   │       ├── static.py     # Blob Storage static sites
+│   │       ├── swa.py        # Static Web Apps
+│   │       ├── database.py   # Postgres Flexible Server
+│   │       ├── secrets.py    # Key Vault
+│   │       ├── preflight.py  # az login, ACR access checks
+│   │       └── utils.py      # az(), az_json() wrappers
 │   ├── deployers/
-│   │   ├── __init__.py     # Dynamic dispatch registry
-│   │   ├── container.py    # Azure Container Apps (ACR + local Docker)
-│   │   ├── static.py       # Azure Blob Storage static sites
-│   │   └── database.py     # Managed Postgres provisioning
+│   │   ├── __init__.py     # Dispatch → resolves provider + routes
+│   │   ├── container.py    # Backward-compat shim
+│   │   ├── static.py       # Backward-compat shim
+│   │   ├── swa.py          # Backward-compat shim
+│   │   └── database.py     # Backward-compat shim
 │   ├── builders/
 │   │   ├── __init__.py
-│   │   ├── docker.py       # Docker builds (local + ACR remote)
+│   │   ├── docker.py       # Generic Docker build/push (local)
 │   │   └── frontend.py     # Frontend builds (npm/pnpm/yarn/bun auto-detect)
 │   └── utils/
 │       ├── __init__.py
-│       ├── azure.py        # Azure CLI wrappers (az, az_json)
+│       ├── shell.py        # Generic subprocess runner (run_cmd)
+│       ├── azure.py        # Backward-compat re-exports
 │       └── git.py          # Git info (hash, branch, build time)
-├── tests/                  # 34 tests
+├── tests/                  # 40 tests
 │   ├── test_builders.py
 │   ├── test_cli.py
 │   ├── test_config.py
@@ -273,10 +289,10 @@ dds/
 
 ### Design Principles
 
-- **No CI dependency** — deploys work from any terminal with `az` and `git`
-- **ACR-first builds** — remote builds by default, no local Docker daemon required
+- **Provider abstraction** — cloud-specific logic lives in `providers/<name>/`; adding a new cloud means implementing the base classes, not touching core
+- **No CI dependency** — deploys work from any terminal with the provider CLI and `git`
+- **Remote-first builds** — ACR remote builds for Azure, extensible per provider
 - **Preflight before, health after** — catch problems on both ends of a deploy
-- **Plugin architecture** — deployer registry is a dict; new service types are plug-and-play
 - **Auto-injection** — `CACHE_BUST` and `GIT_HASH` build args added automatically
 - **Package manager detection** — lockfile-based (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`, or npm default)
 

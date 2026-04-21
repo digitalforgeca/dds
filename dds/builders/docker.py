@@ -1,12 +1,16 @@
-"""Docker image build strategies — local Docker or ACR remote build."""
+"""Docker image build strategies — local Docker build/push.
+
+ACR-specific remote builds have moved to dds.providers.azure.container.
+This module retains the generic local Docker build and image tag resolution.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from dds.console import console
-from dds.utils.azure import az, run_cmd
 from dds.utils.git import git_info
+from dds.utils.shell import run_cmd
 
 
 def build_and_push_local(
@@ -16,7 +20,7 @@ def build_and_push_local(
     build_args: dict[str, str] | None = None,
     verbose: bool = False,
 ) -> None:
-    """Build locally with Docker, then push to ACR."""
+    """Build locally with Docker, then push to a registry."""
     args_str = _build_args_str(build_args)
 
     console.print(f"[yellow]🔨 Building locally: {image}[/yellow]")
@@ -35,30 +39,6 @@ def build_and_push_local(
     if result.returncode != 0:
         console.print("[red]Docker push failed[/red]")
         raise RuntimeError(f"Docker push failed for {image}")
-
-
-def build_acr(
-    registry: str,
-    image_tag: str,
-    dockerfile: str = "Dockerfile",
-    context: str = ".",
-    build_args: dict[str, str] | None = None,
-    platform: str = "linux/amd64",
-    verbose: bool = False,
-) -> None:
-    """Build remotely on Azure Container Registry."""
-    registry_name = registry.split(".")[0]
-    args_str = _build_args_str(build_args)
-
-    console.print(f"[yellow]🔨 ACR build: {image_tag}[/yellow]")
-    console.print(f"  Registry: {registry_name} | Dockerfile: {dockerfile} | Platform: {platform}")
-
-    az(
-        f"acr build --registry {registry_name} "
-        f"--image {image_tag} --file {dockerfile} "
-        f"--platform {platform} {args_str} {context}",
-        verbose=verbose,
-    )
 
 
 def resolve_image_tag(

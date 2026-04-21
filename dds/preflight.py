@@ -34,51 +34,10 @@ def check_command(name: str, cmd: str, version_flag: str = "--version") -> Check
         )
 
 
-def _az_check(args: list[str], timeout: int = 15) -> subprocess.CompletedProcess[str]:
-    """Run an az CLI check command with timeout."""
-    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-
-
-def check_az_login() -> CheckResult:
-    """Check if the Azure CLI is authenticated."""
-    try:
-        result = _az_check(["az", "account", "show", "--query", "name", "-o", "tsv"])
-        if result.returncode == 0 and result.stdout.strip():
-            return CheckResult(
-                name="Azure login", passed=True, message=f"Logged in as: {result.stdout.strip()}"
-            )
-        return CheckResult(
-            name="Azure login", passed=False, message="Not logged in. Run 'az login' first."
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return CheckResult(name="Azure login", passed=False, message="az CLI not responding")
-
-
-def check_acr_access(registry: str) -> CheckResult:
-    """Check if we can access the ACR registry."""
-    if not registry:
-        return CheckResult(name="ACR access", passed=False, message="No registry configured")
-
-    registry_name = registry.split(".")[0]
-    try:
-        result = _az_check(
-            ["az", "acr", "show", "--name", registry_name, "--query", "loginServer", "-o", "tsv"]
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return CheckResult(
-                name="ACR access", passed=True, message=f"Registry: {result.stdout.strip()}"
-            )
-        return CheckResult(
-            name="ACR access", passed=False, message=f"Cannot access registry '{registry_name}'"
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return CheckResult(name="ACR access", passed=False, message="az CLI not responding")
-
-
 def check_docker() -> CheckResult:
     """Check if Docker is available and running."""
     if shutil.which("docker") is None:
-        return CheckResult(name="Docker", passed=True, message="Not installed (ACR builds only)")
+        return CheckResult(name="Docker", passed=True, message="Not installed (remote builds only)")
 
     try:
         result = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=10)
@@ -87,7 +46,7 @@ def check_docker() -> CheckResult:
         return CheckResult(
             name="Docker",
             passed=True,
-            message="Installed but not running (ACR builds still available)",
+            message="Installed but not running (remote builds still available)",
         )
     except (subprocess.TimeoutExpired, OSError):
         return CheckResult(name="Docker", passed=True, message="Installed (status unknown)")
@@ -95,17 +54,40 @@ def check_docker() -> CheckResult:
 
 def run_preflight(project_cfg: dict | None = None) -> list[CheckResult]:
     """Run all preflight checks and return results."""
+    # Generic checks (all providers)
     results = [
-        check_command("Azure CLI", "az"),
         check_command("Git", "git"),
-        check_az_login(),
         check_docker(),
     ]
 
     if project_cfg:
-        registry = project_cfg.get("registry", "")
-        if registry:
-            results.append(check_acr_access(registry))
+        # Provider-specific checks
+        from dds.providers import get_preflight_provider, resolve_provider
+
+        provider_name = resolve_provider(project_cfg=project_cfg)
+
+        # Check for the provider's CLI tool
+        _PROVIDER_CLI: dict[str, tuple[str, str]] = {
+            "azure": ("Azure CLI", "az"),
+            "aws": ("AWS CLI", "aws"),
+            "gcp": ("Google Cloud SDK", "gcloud"),
+        }
+        cli_info = _PROVIDER_CLI.get(provider_name)
+        if cli_info:
+            results.insert(0, check_command(cli_info[0], cli_info[1]))
+
+        # Provider-specific checks (login, registry access, etc.)
+        try:
+            provider = get_preflight_provider(provider_name)
+            results.extend(provider.checks(project_cfg))
+        except SystemExit:
+            results.append(
+                CheckResult(
+                    name=f"Provider ({provider_name})",
+                    passed=False,
+                    message=f"Provider '{provider_name}' not available",
+                )
+            )
 
     return results
 

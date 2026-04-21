@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dds.console import console
-from dds.utils.azure import run_cmd
+from dds.utils.shell import run_cmd
 
 
 def detect_package_manager(project_dir: str = ".") -> str:

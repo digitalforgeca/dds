@@ -36,6 +36,7 @@ def write_template(path: str = "dds.yaml") -> None:
 # Project configuration
 
 project: my-project
+# provider: azure                 # Cloud provider: azure (default) | aws | gcp | docker
 registry: myregistry.azurecr.io
 # key_vault: my-shared-keyvault  # Optional: project-wide Key Vault
 
