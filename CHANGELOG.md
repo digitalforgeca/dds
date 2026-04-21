@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-04-21
+
+### Added
+- **Docker/SSH provider** — deploy to any Docker host over SSH. Full provider implementation:
+  - `container-app` → `docker compose build/up` on remote host. Three build strategies: `remote` (build on host), `local` (build+push+pull), `registry` (pull pre-built image).
+  - `static-site` → build locally, `rsync` or `scp` to remote web root.
+  - `database` → `docker exec` into Postgres container to create databases. Checks for existence before creating.
+  - `secrets` → reads from local `.env` files (vault_name = file path, secret_name = key).
+  - `preflight` → SSH connectivity check + remote `docker compose version` check.
+  - `rollback` → pull specific image tag and restart, or restart from compose definition.
+  - `logs` → `docker compose logs` with follow support.
+  - `health` → `docker inspect` for container state + optional HTTP health endpoint.
+- **SWA guard for Docker provider** — `get_swa_provider("docker")` exits with clear message directing to `static-site`.
+- **SSH utilities** — `dds/providers/docker/utils.py` with `ssh()`, `resolve_host()`, `resolve_compose_file()`, `resolve_compose_project_dir()`.
+- **Docker provider tests** — provider instantiation, SWA rejection.
+
 ## [0.4.0] — 2026-04-21
 
 ### Added

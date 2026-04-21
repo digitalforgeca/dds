@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dds-deploy"
-version = "0.4.0"
+version = "0.5.0"
 description = "Daedalus Deployment System — cross-platform deployment tooling for Azure"
 readme = "README.md"
 license = "MIT"

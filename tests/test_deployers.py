@@ -58,3 +58,16 @@ class TestDeployerRegistry:
 
     def test_show_status_is_callable(self) -> None:
         assert callable(show_status)
+
+    def test_docker_providers_importable(self) -> None:
+        """Docker provider should return proper provider instances."""
+        assert isinstance(get_container_provider("docker"), ContainerProvider)
+        assert isinstance(get_static_provider("docker"), StaticProvider)
+        assert isinstance(get_database_provider("docker"), DatabaseProvider)
+
+    def test_docker_swa_not_supported(self) -> None:
+        """Docker provider should not support SWA."""
+        import pytest
+
+        with pytest.raises(SystemExit):
+            get_swa_provider("docker")

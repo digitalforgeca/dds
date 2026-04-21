@@ -2,9 +2,9 @@
 
 > *"He who would learn to fly one day must first learn to stand and walk and run and climb and dance; one cannot fly into flying."*
 
-**Version:** 0.4.0 · **License:** MIT · **Python:** 3.10+
+**Version:** 0.5.0 · **License:** MIT · **Python:** 3.10+
 
-Platform-agnostic deployment tooling with a provider abstraction layer. Ships with Azure support (Container Apps, Static Web Apps, Blob Storage, Postgres Flex). One config file, one CLI, every environment, any cloud.
+Platform-agnostic deployment tooling with a provider abstraction layer. Ships with **Azure** (Container Apps, Static Web Apps, Blob Storage, Postgres Flex) and **Docker/SSH** (any Docker host, `docker compose`, rsync). One config file, one CLI, every environment, any cloud.
 
 ---
 
@@ -209,13 +209,41 @@ environments:
         # collation: en_US.utf8         # Default
 ```
 
+### Docker/SSH Provider Example
+
+```yaml
+project: my-forge
+provider: docker
+host: dforge-vps              # SSH host (from ~/.ssh/config or IP)
+
+environments:
+  prod:
+    project_dir: /opt/forge    # Remote dir with docker-compose.yml
+    services:
+      api:
+        type: container-app
+        compose_service: api   # Service name in docker-compose.yml
+        health_path: /health
+        port: 3000
+      web:
+        type: static-site
+        build_cmd: npm run build
+        build_dir: dist
+        remote_path: /var/www/mysite
+      db:
+        type: database
+        container: postgres     # Docker container name
+        database: mydb
+```
+
 ### Service Types
 
-| Type | Description | Deployer |
-|------|-------------|----------|
-| `container-app` | Azure Container Apps | Build → Push → Update → Health Check |
-| `static-site` | Azure Blob Storage `$web` | Install → Build → Upload |
-| `database` | Azure Postgres Flexible Server | Provision database |
+| Type | Azure | Docker/SSH |
+|------|-------|------------|
+| `container-app` | Container Apps (ACR build) | `docker compose build/up` over SSH |
+| `static-site` | Blob Storage `$web` | rsync/scp to remote web root |
+| `swa` | Static Web Apps | ❌ Not supported (use `static-site`) |
+| `database` | Postgres Flexible Server | `docker exec` into Postgres container |
 
 ### Build Strategies (Container Apps)
 
@@ -251,15 +279,21 @@ dds/
 │   ├── providers/
 │   │   ├── __init__.py     # Provider registry + factory
 │   │   ├── base.py         # Abstract base classes (ContainerProvider, etc.)
-│   │   └── azure/          # Azure provider implementation
-│   │       ├── __init__.py
-│   │       ├── container.py  # Container Apps (build, deploy, rollback, logs, health)
-│   │       ├── static.py     # Blob Storage static sites
-│   │       ├── swa.py        # Static Web Apps
-│   │       ├── database.py   # Postgres Flexible Server
-│   │       ├── secrets.py    # Key Vault
-│   │       ├── preflight.py  # az login, ACR access checks
-│   │       └── utils.py      # az(), az_json() wrappers
+│   │   ├── azure/          # Azure provider
+│   │   │   ├── container.py  # Container Apps (build, deploy, rollback, logs, health)
+│   │   │   ├── static.py     # Blob Storage static sites
+│   │   │   ├── swa.py        # Static Web Apps
+│   │   │   ├── database.py   # Postgres Flexible Server
+│   │   │   ├── secrets.py    # Key Vault
+│   │   │   ├── preflight.py  # az login, ACR access checks
+│   │   │   └── utils.py      # az(), az_json() wrappers
+│   │   └── docker/         # Docker/SSH provider
+│   │       ├── container.py  # docker compose over SSH (build, deploy, logs, health)
+│   │       ├── static.py     # rsync/scp to remote host
+│   │       ├── database.py   # docker exec into Postgres containers
+│   │       ├── secrets.py    # .env file reader
+│   │       ├── preflight.py  # SSH + remote Docker checks
+│   │       └── utils.py      # ssh() wrapper, host/compose resolution
 │   ├── deployers/
 │   │   ├── __init__.py     # Dispatch → resolves provider + routes
 │   │   ├── container.py    # Backward-compat shim
@@ -289,9 +323,9 @@ dds/
 
 ### Design Principles
 
-- **Provider abstraction** — cloud-specific logic lives in `providers/<name>/`; adding a new cloud means implementing the base classes, not touching core
+- **Provider abstraction** — cloud-specific logic lives in `providers/<name>/`; adding a new cloud means implementing the base classes, not touching core. Ships with `azure` and `docker` providers.
 - **No CI dependency** — deploys work from any terminal with the provider CLI and `git`
-- **Remote-first builds** — ACR remote builds for Azure, extensible per provider
+- **Remote-first builds** — ACR remote builds for Azure, `docker compose build` over SSH for Docker, extensible per provider
 - **Preflight before, health after** — catch problems on both ends of a deploy
 - **Auto-injection** — `CACHE_BUST` and `GIT_HASH` build args added automatically
 - **Package manager detection** — lockfile-based (`pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`, or npm default)

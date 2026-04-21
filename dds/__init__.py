@@ -5,4 +5,4 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("dds-deploy")
 except PackageNotFoundError:
-    __version__ = "0.4.0"  # fallback for editable/dev installs
+    __version__ = "0.5.0"  # fallback for editable/dev installs
