@@ -12,7 +12,7 @@ from dds.console import console
 from dds.context import DeployContext
 from dds.providers.azure.utils import az, az_json
 from dds.providers.base import ContainerProvider
-from dds.utils.shell import run_cmd
+from dds.utils.shell import build_args_str, run_cmd
 
 
 class AzureContainerProvider(ContainerProvider):
@@ -284,7 +284,7 @@ class AzureContainerProvider(ContainerProvider):
         image: str, dockerfile: str, context: str,
         build_args: dict[str, str], verbose: bool,
     ) -> None:
-        args_str = _build_args_str(build_args)
+        args_str = build_args_str(build_args)
         console.print(f"[yellow]🔨 Building locally: {image}[/yellow]")
         result = run_cmd(f"docker build -f {dockerfile} -t {image} {args_str} {context}", verbose=verbose)
         if result.returncode != 0:
@@ -305,7 +305,7 @@ class AzureContainerProvider(ContainerProvider):
         build_args: dict[str, str], verbose: bool, platform: str = "linux/amd64",
     ) -> None:
         registry_name = registry.split(".")[0]
-        args_str = _build_args_str(build_args)
+        args_str = build_args_str(build_args)
         console.print(f"[yellow]🔨 ACR build: {image_tag}[/yellow]")
         console.print(f"  Registry: {registry_name} | Dockerfile: {dockerfile} | Platform: {platform}")
         az(
@@ -348,8 +348,6 @@ class AzureContainerProvider(ContainerProvider):
             return False
 
 
-def _build_args_str(build_args: dict[str, str] | None) -> str:
-    """Format build args dict into Docker --build-arg flags."""
-    if not build_args:
-        return ""
-    return " ".join(f"--build-arg {k}={v}" for k, v in build_args.items())
+# _build_args_str has moved to dds.utils.shell.build_args_str.
+# Kept as a module-level alias for any callers that imported it directly.
+_build_args_str = build_args_str

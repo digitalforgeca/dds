@@ -95,8 +95,17 @@ def load_env_file(path: str, verbose: bool = False) -> dict[str, str]:
             continue
         key, _, value = line.partition("=")
         key, value = key.strip(), value.strip()
+        # Strip matching surrounding quotes (double or single).
+        # Quoted values may contain inline comments that are part of the value;
+        # unquoted values have inline comments stripped.
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
             value = value[1:-1]
+        else:
+            # Remove inline comment: anything after un-quoted " #" or "\t#"
+            for sep in (" #", "\t#"):
+                if sep in value:
+                    value = value[: value.index(sep)].rstrip()
+                    break
         result[key] = value
 
     if verbose:
