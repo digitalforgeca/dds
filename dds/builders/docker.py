@@ -10,7 +10,7 @@ from typing import Any
 
 from dds.console import console
 from dds.utils.git import git_info
-from dds.utils.shell import run_cmd
+from dds.utils.shell import build_args_str, run_cmd
 
 
 def build_and_push_local(
@@ -21,7 +21,7 @@ def build_and_push_local(
     verbose: bool = False,
 ) -> None:
     """Build locally with Docker, then push to a registry."""
-    args_str = _build_args_str(build_args)
+    args_str = build_args_str(build_args)
 
     console.print(f"[yellow]🔨 Building locally: {image}[/yellow]")
     result = run_cmd(
@@ -58,8 +58,6 @@ def resolve_image_tag(
     return f"{registry}/{project}-{name}:{tag}"
 
 
-def _build_args_str(build_args: dict[str, str] | None) -> str:
-    """Format build args dict into Docker --build-arg flags."""
-    if not build_args:
-        return ""
-    return " ".join(f"--build-arg {k}={v}" for k, v in build_args.items())
+# _build_args_str has moved to dds.utils.shell.build_args_str.
+# Kept as a private alias for any callers that imported it directly.
+_build_args_str = build_args_str
