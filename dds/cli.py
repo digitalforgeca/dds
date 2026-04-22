@@ -66,10 +66,10 @@ def _check_access(environment: str, env_cfg: dict) -> None:
         )
         raise SystemExit(1)
 
-    if True:
-        console.print(
-            f"  [dim]Access check: {deployer_email} ✓ ({environment})[/dim]"
-        )
+    # Always emit a dim confirmation so operators have an audit trail.
+    console.print(
+        f"  [dim]Access check: {deployer_email} ✓ ({environment})[/dim]"
+    )
 
 
 def _make_ctx(click_ctx: click.Context, environment: str, service: str) -> DeployContext:
