@@ -76,3 +76,29 @@ class TestResolveSecrets:
             project_cfg={},
         )
         assert "MISSING" not in result
+
+    def test_inline_comment_stripped_from_unquoted_value(self, tmp_path: Path) -> None:
+        """Inline comments after unquoted values must be stripped (dotenv standard)."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("DATABASE_URL=postgres://localhost/mydb  # local dev only\n")
+        result = load_env_file(str(env_file))
+        assert result["DATABASE_URL"] == "postgres://localhost/mydb"
+
+    def test_inline_comment_stripped_tab_separator(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("API_URL=https://api.example.com\t# production endpoint\n")
+        result = load_env_file(str(env_file))
+        assert result["API_URL"] == "https://api.example.com"
+
+    def test_inline_comment_not_stripped_from_quoted_value(self, tmp_path: Path) -> None:
+        """Hash inside quoted strings must be preserved as part of the value."""
+        env_file = tmp_path / ".env"
+        env_file.write_text('PASSWORD="hunter#2"  # good password\n')
+        result = load_env_file(str(env_file))
+        assert result["PASSWORD"] == "hunter#2"
+
+    def test_quoted_value_with_trailing_comment(self, tmp_path: Path) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text('GREETING="hello world"  # a greeting\n')
+        result = load_env_file(str(env_file))
+        assert result["GREETING"] == "hello world"
