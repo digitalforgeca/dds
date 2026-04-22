@@ -59,7 +59,15 @@ def resolve_image_tag(
 
 
 def _build_args_str(build_args: dict[str, str] | None) -> str:
-    """Format build args dict into Docker --build-arg flags."""
+    """Format build args dict into Docker --build-arg flags.
+
+    Values containing spaces or shell-special characters are quoted to prevent
+    word-splitting when the command string is passed to the shell.
+    """
     if not build_args:
         return ""
-    return " ".join(f"--build-arg {k}={v}" for k, v in build_args.items())
+    import shlex
+
+    return " ".join(
+        f"--build-arg {k}={shlex.quote(str(v))}" for k, v in build_args.items()
+    )

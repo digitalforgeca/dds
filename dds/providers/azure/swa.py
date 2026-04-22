@@ -27,6 +27,7 @@ class AzureSwaProvider(SwaProvider):
 
         env_production_path = os.path.join(project_dir, ".env.production")
         env_production_backup = None
+        env_prod_local_backup: str | None = None
 
         if env_file:
             env_file_path = os.path.join(project_dir, env_file)
@@ -46,6 +47,8 @@ class AzureSwaProvider(SwaProvider):
 
             env_prod_local = os.path.join(project_dir, ".env.production.local")
             if os.path.exists(env_prod_local):
+                with open(env_prod_local) as f:
+                    env_prod_local_backup = f.read()
                 os.remove(env_prod_local)
 
         try:
@@ -107,6 +110,18 @@ class AzureSwaProvider(SwaProvider):
                     f.write(env_production_backup)
                 if ctx.verbose:
                     console.print("  Restored original .env.production")
+            elif env_file and os.path.exists(env_production_path):
+                # We created .env.production from scratch — remove it
+                os.remove(env_production_path)
+                if ctx.verbose:
+                    console.print("  Removed temporary .env.production")
+
+            env_prod_local_path = os.path.join(project_dir, ".env.production.local")
+            if env_prod_local_backup is not None:
+                with open(env_prod_local_path, "w") as f:
+                    f.write(env_prod_local_backup)
+                if ctx.verbose:
+                    console.print("  Restored original .env.production.local")
 
     def status(self, ctx: DeployContext) -> None:
         """Show status for a Static Web App."""

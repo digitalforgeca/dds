@@ -179,7 +179,7 @@ class DockerContainerProvider(ContainerProvider):
             ssh(
                 host,
                 f"{cd_prefix}docker compose -f {compose_file} down {service_name} && "
-                f"docker compose -f {compose_file} up -d {service_name}",
+                f"{cd_prefix}docker compose -f {compose_file} up -d {service_name}",
                 verbose=ctx.verbose,
             )
 
