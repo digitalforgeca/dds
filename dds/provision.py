@@ -110,15 +110,30 @@ def provision_kubernetes(project_cfg: dict[str, Any], env_cfg: dict[str, Any], v
     if registry_name:
         console.print(f"[bold]──── 4. ACR ↔ AKS attachment ────[/bold]")
         console.print(f"  ⏳ Ensuring ACR '{registry_name}' is attached...")
+        acr_attached = False
         try:
             az(
                 f"aks update --resource-group {rg} --name {cluster_name} "
                 f"--attach-acr {registry_name}",
                 verbose=verbose,
             )
-            console.print(f"  ✅ ACR attached.")
+            console.print(f"  ✅ ACR attached via managed identity.")
+            acr_attached = True
         except RuntimeError:
-            console.print(f"  ⚠️  ACR attachment may already exist (non-fatal).")
+            console.print(f"  ⚠️  Managed identity ACR attach failed (RBAC).")
+            console.print(f"  ⏳ Falling back to imagePullSecret...")
+
+        if not acr_attached:
+            # Fallback: enable admin on ACR and create pull secrets per namespace
+            try:
+                az(f"acr update --name {registry_name} --resource-group {rg} --admin-enabled true",
+                   verbose=verbose)
+                namespaces = _collect_namespaces(project_cfg)
+                _create_acr_pull_secrets(registry_name, rg, namespaces, verbose)
+                console.print(f"  ✅ ACR pull secrets created in {len(namespaces)} namespace(s).")
+            except RuntimeError as e:
+                console.print(f"  ⚠️  ACR pull secret fallback failed: {e}")
+                console.print(f"     You may need to manually configure image pull access.")
         console.print()
 
     # ── 5. cert-manager ─────────────────────────────────────────────────
@@ -201,12 +216,22 @@ def _install_cert_manager(cert_cfg: dict[str, Any], verbose: bool = False) -> No
     if result.returncode == 0:
         console.print("  ✅ cert-manager already installed.")
     else:
+        # Check helm is available
+        import shutil
+        if shutil.which("helm") is None:
+            console.print("  ⚠️  Helm not found — skipping cert-manager install.")
+            console.print("     Install helm, then re-run: dds provision <env>")
+            return
+
         console.print("  ⏳ Installing cert-manager via Helm...")
         try:
             helm("repo add jetstack https://charts.jetstack.io", verbose=verbose)
         except RuntimeError:
             pass  # Already added
-        helm("repo update jetstack", verbose=verbose)
+        try:
+            helm("repo update jetstack", verbose=verbose)
+        except RuntimeError:
+            pass  # May fail transiently
         helm(
             "install cert-manager jetstack/cert-manager "
             "--namespace cert-manager --create-namespace "
@@ -254,6 +279,39 @@ def _collect_namespaces(project_cfg: dict[str, Any]) -> list[str]:
         if ns and ns not in namespaces:
             namespaces.append(ns)
     return namespaces
+
+
+def _create_acr_pull_secrets(
+    registry_name: str, rg: str, namespaces: list[str], verbose: bool = False
+) -> None:
+    """Create imagePullSecrets in each namespace using ACR admin credentials."""
+    from dds.providers.azure.utils import az
+
+    creds_json = az(
+        f"acr credential show --name {registry_name} --resource-group {rg} -o json",
+        capture=True, verbose=verbose,
+    )
+    import json
+    creds = json.loads(creds_json)
+    username = creds.get("username", "")
+    password = creds.get("passwords", [{}])[0].get("value", "")
+
+    if not username or not password:
+        raise RuntimeError(f"Could not retrieve ACR admin credentials for {registry_name}")
+
+    for ns in namespaces:
+        _ensure_namespace(ns, verbose)
+        result = subprocess.run(
+            f"kubectl create secret docker-registry acr-pull-secret "
+            f"--namespace {ns} "
+            f"--docker-server={registry_name}.azurecr.io "
+            f"--docker-username={username} "
+            f"--docker-password={password} "
+            f"--dry-run=client -o yaml | kubectl apply -f -",
+            shell=True, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"  \u26a0\ufe0f  Pull secret failed for {ns}: {result.stderr.strip()}")
 
 
 def _ensure_namespace(namespace: str, verbose: bool = False) -> None:
