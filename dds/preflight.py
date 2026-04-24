@@ -69,6 +69,7 @@ def run_preflight(project_cfg: dict | None = None) -> list[CheckResult]:
         # Check for the provider's CLI tool
         _PROVIDER_CLI: dict[str, tuple[str, str]] = {
             "azure": ("Azure CLI", "az"),
+            "kubernetes": ("kubectl", "kubectl"),
             "aws": ("AWS CLI", "aws"),
             "gcp": ("Google Cloud SDK", "gcloud"),
         }

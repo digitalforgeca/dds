@@ -16,6 +16,7 @@ from dds.providers.base import (
 # Lazy-loaded provider registry: provider_name → module path
 _PROVIDER_MODULES: dict[str, str] = {
     "azure": "dds.providers.azure",
+    "kubernetes": "dds.providers.kubernetes",
     "docker": "dds.providers.docker",
     "custom": "dds.providers.custom",
 }

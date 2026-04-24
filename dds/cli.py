@@ -273,6 +273,46 @@ def health(ctx: click.Context, environment: str, service: str) -> None:
 
 
 @main.command()
+@click.argument("environment")
+@click.option("--dry-run", is_flag=True, help="Preview what would be provisioned.")
+@click.pass_context
+def provision(ctx: click.Context, environment: str, dry_run: bool) -> None:
+    """Provision infrastructure for an environment (AKS, ACR, namespaces, cert-manager)."""
+    cfg, env_cfg = _load_env(ctx, environment)
+    provider = cfg.get("provider", "azure")
+
+    if provider != "kubernetes":
+        console.print(
+            f"[yellow]Provision is currently supported for 'kubernetes' provider only "
+            f"(got '{provider}').[/yellow]"
+        )
+        raise SystemExit(1)
+
+    if dry_run:
+        console.print("[dim]DRY RUN — showing what would be provisioned:[/dim]\n")
+        k8s_cfg = cfg.get("kubernetes", {})
+        registry = cfg.get("registry", "").split(".")[0]
+        console.print(f"  ACR: {registry}")
+        console.print(f"  AKS: {k8s_cfg.get('cluster', '?')} in {k8s_cfg.get('resource_group', '?')}")
+        nodes = k8s_cfg.get("nodes", {})
+        console.print(f"  Nodes: {nodes.get('vm_size', 'Standard_B2ms')} x{nodes.get('count', 1)} (scale {nodes.get('min', 1)}-{nodes.get('max', 3)})")
+
+        namespaces = []
+        for ename, ecfg in cfg.get("environments", {}).items():
+            ns = ecfg.get("kubernetes", {}).get("namespace", "")
+            if ns:
+                namespaces.append(ns)
+        if namespaces:
+            console.print(f"  Namespaces: {', '.join(namespaces)}")
+        console.print(f"  cert-manager: {'enabled' if k8s_cfg.get('cert_manager', {}).get('enabled', True) else 'disabled'}")
+        return
+
+    from dds.provision import provision_kubernetes
+
+    provision_kubernetes(cfg, env_cfg, verbose=ctx.obj["verbose"])
+
+
+@main.command()
 def init() -> None:
     """Create a dds.yaml config file in the current directory."""
     import os
