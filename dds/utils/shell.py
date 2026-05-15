@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 
 from dds.console import console
@@ -33,3 +34,21 @@ def run_cmd(
         console.print(result.stdout.rstrip())
 
     return result
+
+
+def build_args_str(build_args: dict[str, str] | None) -> str:
+    """Format a build-args dict into Docker --build-arg flags.
+
+    Values are shell-quoted so that spaces and metacharacters in values do not
+    break the command string when it is passed to the shell with shell=True.
+
+    Example::
+
+        >>> build_args_str({'NODE_ENV': 'production', 'LABEL': 'hello world'})
+        "--build-arg NODE_ENV=production --build-arg LABEL='hello world'"
+    """
+    if not build_args:
+        return ""
+    return " ".join(
+        f"--build-arg {k}={shlex.quote(str(v))}" for k, v in build_args.items()
+    )
