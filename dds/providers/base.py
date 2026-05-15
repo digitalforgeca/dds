@@ -90,6 +90,22 @@ class SecretProvider(ABC):
         """Fetch a secret value. Returns None if not found."""
 
 
+class BackupProvider(ABC):
+    """Manages backup and restore operations for services and databases."""
+
+    @abstractmethod
+    def backup(self, ctx: DeployContext, output_dir: str) -> str:
+        """Create a backup. Returns the path/identifier of the backup artifact."""
+
+    @abstractmethod
+    def restore(self, ctx: DeployContext, backup_id: str) -> None:
+        """Restore from a backup artifact/identifier."""
+
+    @abstractmethod
+    def list_backups(self, ctx: DeployContext) -> None:
+        """List available backups for a service."""
+
+
 class PreflightProvider(ABC):
     """Provider-specific preflight checks (auth, registry access, etc.)."""
 

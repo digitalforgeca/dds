@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dds.providers.azure.backup import AzureBackupProvider
 from dds.providers.azure.container import AzureContainerProvider
 from dds.providers.azure.database import AzureDatabaseProvider
 from dds.providers.azure.preflight import AzurePreflightProvider
@@ -10,6 +11,7 @@ from dds.providers.azure.static import AzureStaticProvider
 from dds.providers.azure.swa import AzureSwaProvider
 
 # Singleton instances (stateless, safe to reuse)
+_backup = AzureBackupProvider()
 _container = AzureContainerProvider()
 _static = AzureStaticProvider()
 _swa = AzureSwaProvider()
@@ -40,3 +42,7 @@ def get_secret_provider() -> AzureSecretProvider:
 
 def get_preflight_provider() -> AzurePreflightProvider:
     return _preflight
+
+
+def get_backup_provider() -> AzureBackupProvider:
+    return _backup

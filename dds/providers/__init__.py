@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from dds.providers.base import (
+    BackupProvider,
     ContainerProvider,
     DatabaseProvider,
     PreflightProvider,
@@ -75,6 +76,12 @@ def get_preflight_provider(provider_name: str) -> PreflightProvider:
     """Get the PreflightProvider for a given cloud provider."""
     mod = _load_provider_module(provider_name)
     return mod.get_preflight_provider()
+
+
+def get_backup_provider(provider_name: str) -> BackupProvider:
+    """Get the BackupProvider for a given cloud provider."""
+    mod = _load_provider_module(provider_name)
+    return mod.get_backup_provider()
 
 
 def resolve_provider(

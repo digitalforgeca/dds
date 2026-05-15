@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dds.providers.kubernetes.backup import KubernetesBackupProvider
 from dds.providers.kubernetes.container import KubernetesContainerProvider
 from dds.providers.kubernetes.preflight import KubernetesPreflightProvider
 from dds.providers.kubernetes.secrets import KubernetesSecretProvider
 
 # Singleton instances (stateless, safe to reuse)
+_backup = KubernetesBackupProvider()
 _container = KubernetesContainerProvider()
 _secret = KubernetesSecretProvider()
 _preflight = KubernetesPreflightProvider()
@@ -22,3 +24,7 @@ def get_secret_provider() -> KubernetesSecretProvider:
 
 def get_preflight_provider() -> KubernetesPreflightProvider:
     return _preflight
+
+
+def get_backup_provider() -> KubernetesBackupProvider:
+    return _backup

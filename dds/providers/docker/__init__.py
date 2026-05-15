@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dds.providers.docker.backup import DockerBackupProvider
 from dds.providers.docker.container import DockerContainerProvider
 from dds.providers.docker.database import DockerDatabaseProvider
 from dds.providers.docker.preflight import DockerPreflightProvider
 from dds.providers.docker.secrets import DockerSecretProvider
 from dds.providers.docker.static import DockerStaticProvider
 
+_backup = DockerBackupProvider()
 _container = DockerContainerProvider()
 _static = DockerStaticProvider()
 _database = DockerDatabaseProvider()
@@ -44,3 +46,7 @@ def get_secret_provider() -> DockerSecretProvider:
 
 def get_preflight_provider() -> DockerPreflightProvider:
     return _preflight
+
+
+def get_backup_provider() -> DockerBackupProvider:
+    return _backup

@@ -313,6 +313,116 @@ def provision(ctx: click.Context, environment: str, dry_run: bool) -> None:
 
 
 @main.command()
+@click.argument("environment")
+@click.option("--service", "-s", default=None, help="Back up only a specific service.")
+@click.option("--output", "-o", default=".dds-backups", help="Output directory (default: .dds-backups).")
+@click.pass_context
+def backup(
+    ctx: click.Context,
+    environment: str,
+    service: str | None,
+    output: str,
+) -> None:
+    """Create backups of services in an environment."""
+    cfg, env_cfg = _load_env(ctx, environment)
+    services = env_cfg.get("services", {})
+    targets = {service: services[service]} if service else services
+
+    if service and service not in services:
+        console.print(f"[red]Error:[/red] Unknown service '{service}'.")
+        console.print(f"Available: {', '.join(services.keys())}")
+        raise SystemExit(1)
+
+    if not targets:
+        console.print("[yellow]No services to back up.[/yellow]")
+        raise SystemExit(1)
+
+    from dds.providers import get_backup_provider, resolve_provider
+
+    results: list[tuple[str, str]] = []
+    failed: list[str] = []
+
+    for svc_name, svc_cfg in targets.items():
+        deploy_ctx = DeployContext(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+        provider_name = resolve_provider(svc_cfg, env_cfg, cfg)
+
+        try:
+            provider = get_backup_provider(provider_name)
+            backup_id = provider.backup(deploy_ctx, output)
+            if backup_id:
+                results.append((svc_name, backup_id))
+        except Exception as e:
+            console.print(f"[red]❌ Backup failed for {svc_name}: {e}[/red]")
+            failed.append(svc_name)
+
+    if results:
+        console.print(f"\n[bold green]📦 Backup summary ({environment}):[/bold green]")
+        for svc_name, backup_id in results:
+            console.print(f"  {svc_name}: {backup_id}")
+
+    if failed:
+        console.print(f"\n[red]⚠️  Failed: {', '.join(failed)}[/red]")
+        raise SystemExit(1)
+
+
+@main.command()
+@click.argument("environment")
+@click.option("--service", "-s", required=True, help="Service to restore.")
+@click.option("--from", "-f", "from_id", required=True, help="Backup ID or path to restore from.")
+@click.pass_context
+def restore(
+    ctx: click.Context,
+    environment: str,
+    service: str,
+    from_id: str,
+) -> None:
+    """Restore a service from a backup."""
+    _load_env(ctx, environment, require_access=True)
+    deploy_ctx = _make_ctx(ctx, environment, service)
+
+    from dds.providers import get_backup_provider
+
+    provider = get_backup_provider(deploy_ctx.provider)
+    provider.restore(deploy_ctx, from_id)
+
+
+@main.command()
+@click.argument("environment")
+@click.option("--service", "-s", default=None, help="Show backups for a specific service only.")
+@click.pass_context
+def backups(
+    ctx: click.Context,
+    environment: str,
+    service: str | None,
+) -> None:
+    """List available backups for services in an environment."""
+    cfg, env_cfg = _load_env(ctx, environment)
+    services = env_cfg.get("services", {})
+    targets = {service: services[service]} if service else services
+
+    if service and service not in services:
+        console.print(f"[red]Error:[/red] Unknown service '{service}'.")
+        console.print(f"Available: {', '.join(services.keys())}")
+        raise SystemExit(1)
+
+    if not targets:
+        console.print("[yellow]No services found.[/yellow]")
+        raise SystemExit(1)
+
+    from dds.providers import get_backup_provider, resolve_provider
+
+    for svc_name, svc_cfg in targets.items():
+        deploy_ctx = DeployContext(svc_name, svc_cfg, env_cfg, cfg, verbose=ctx.obj["verbose"])
+        provider_name = resolve_provider(svc_cfg, env_cfg, cfg)
+
+        try:
+            provider = get_backup_provider(provider_name)
+            provider.list_backups(deploy_ctx)
+        except Exception as e:
+            console.print(f"[red]❌ Error listing backups for {svc_name}: {e}[/red]")
+
+
+@main.command()
 def init() -> None:
     """Create a dds.yaml config file in the current directory."""
     import os

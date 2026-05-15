@@ -51,12 +51,14 @@ Available variables (auto-populated from config + git):
 
 from __future__ import annotations
 
+from dds.providers.custom.backup import CustomBackupProvider
 from dds.providers.custom.container import CustomContainerProvider
 from dds.providers.custom.database import CustomDatabaseProvider
 from dds.providers.custom.preflight import CustomPreflightProvider
 from dds.providers.custom.secrets import CustomSecretProvider
 from dds.providers.custom.static import CustomStaticProvider
 
+_backup = CustomBackupProvider()
 _container = CustomContainerProvider()
 _static = CustomStaticProvider()
 _database = CustomDatabaseProvider()
@@ -95,3 +97,7 @@ def get_secret_provider() -> CustomSecretProvider:
 
 def get_preflight_provider() -> CustomPreflightProvider:
     return _preflight
+
+
+def get_backup_provider() -> CustomBackupProvider:
+    return _backup

@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] — 2026-05-14
+
+### Added
+- **Backup/restore commands** — `dds backup`, `dds restore`, and `dds backups` CLI commands for disaster recovery across all providers.
+- **`BackupProvider` ABC** — `dds/providers/base.py` defines `backup()`, `restore()`, `list_backups()` abstract methods. All providers implement the interface.
+- **Azure backup provider** — `dds/providers/azure/backup.py`:
+  - **Database (Postgres Flex):** Named backups via `az postgres flexible-server backup create/list`. Restore creates a new server from point-in-time.
+  - **Blob storage (static-site):** Snapshot all blobs in a container. Restore by copying from snapshot.
+  - **Container App:** Export revision info + env vars as JSON manifest for disaster recovery reference.
+- **Docker backup provider** — `dds/providers/docker/backup.py`:
+  - **Database:** `docker exec pg_dump` over SSH, piped to gzipped SQL file locally.
+  - **Static site:** `rsync` snapshot from remote to local backup directory.
+- **Custom backup provider** — `dds/providers/custom/backup.py`: Config-driven command templates for `backup`, `restore`, and `list_backups`. Reads from `commands.backup` or `commands.<service_type>` in dds.yaml.
+- **Kubernetes backup provider** — `dds/providers/kubernetes/backup.py`: Stub implementation (prints "not yet implemented"). Satisfies the ABC for forward compatibility.
+- **`get_backup_provider()`** — added to provider registry (`dds/providers/__init__.py`) and all provider `__init__.py` files.
+- **Backup CLI commands:**
+  - `dds backup <env>` — back up all services (or `--service/-s` for one). Default output: `.dds-backups/`.
+  - `dds restore <env> --service/-s SERVICE --from/-f BACKUP_ID` — restore a single service. Requires access check.
+  - `dds backups <env>` — list available backups for all or a specific service.
+- **Backup tests** — `tests/test_backup.py` with provider instantiation, ABC import, and CLI registration tests.
+
 ## [0.6.0] — 2026-04-21
 
 ### Added

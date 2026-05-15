@@ -72,6 +72,10 @@ class TestCLI:
             "logs",
             "health",
             "init",
+            "provision",
+            "backup",
+            "restore",
+            "backups",
         }
         actual = set(main.commands.keys())
         assert expected == actual, f"Missing: {expected - actual}, Extra: {actual - expected}"
